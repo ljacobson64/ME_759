@@ -20,7 +20,10 @@ double randBetween(int low, int high) {
 }
 
 int main(int argc, char *argv[]) {
-  if (argc != 3) {  exit(1); }
+  if (argc != 3) {
+    printf("Usage: ./p2 log2(N) nthreads\n");
+    exit(1);
+  }
 
   int exponent = atoi(argv[1]);
   int N = int_power(2, exponent);  // Number of random numbers
@@ -110,6 +113,7 @@ int main(int argc, char *argv[]) {
   cudaFree(dC);
 
   // Print some information
+  printf("Threads per block:   %12d\n", nthreads);
   printf("Number of integers:  %12d\n", N);
   printf("Maximum difference:  %12.6e\n", max_dif);
   printf("Exclusive time:      %12.6e ms\n", duration_ex);
