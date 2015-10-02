@@ -47,9 +47,9 @@ int main(int argc, char *argv[]) {
   // reference
   srand(1443740650);
   for (int i = 0; i < N; i++) {
-      hA[i] = randBetween(-10, 10);
-      hB[i] = randBetween(-10, 10);
-      refC[i] = hA[i] + hB[i];
+    hA[i] = randBetween(-10, 10);
+    hB[i] = randBetween(-10, 10);
+    refC[i] = hA[i] + hB[i];
   }
 
   // Set up timing
@@ -95,8 +95,8 @@ int main(int argc, char *argv[]) {
   // absolute difference
   double max_dif = 0.0;
   for (int i = 0; i < N; i++) {
-      difC[i] = hC[i] - refC[i];
-      if (abs(difC[i]) > max_dif) { max_dif = abs(difC[i]); }
+    difC[i] = hC[i] - refC[i];
+    if (abs(difC[i]) > max_dif) { max_dif = abs(difC[i]); }
   }
 
   // Free memory
