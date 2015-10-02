@@ -10,7 +10,7 @@ __global__ void sumArrays(double* dA, double* dB, double* dC) {
 
 int int_power(int base, int exponent) {
   int result = 1;
-  for (int i = 0; i < exponent; i++) { result *= base; }
+  for (int i = 0; i < exponent; i++) result *= base;
   return result;
 }
 
@@ -57,49 +57,72 @@ int main(int argc, char *argv[]) {
 
   // Set up timing
   struct timespec start_in, end_in;
-  float duration_ex, duration_in;
+  float duration_ex;
+  double duration_in, duration_ex_total;
+  double duration_in_total = 0.0;
   long duration_in_ns;
-  cudaEvent_t start_ex, end_ex;
-  cudaEventCreate(&start_ex);
-  cudaEventCreate(&end_ex);
+  int num_runs = 0;
 
-  // Start inclusive timing
-  clock_gettime(CLOCK_MONOTONIC, &start_in);
+  // Loop until the total inclusive duration exceeds 1 second
+  while (duration_in_total < 1000.0) {
+    duration_ex_total = 0.0;
+    duration_in_total = 0.0;
+    
+    // Double the number of runs
+    if (num_runs != 0) num_runs *= 2;
+    else num_runs = 1;
+    
+    for (int i = 0; i < num_runs; i++) {
+      // CUDA timing variables
+      cudaEvent_t start_ex, end_ex;
+      cudaEventCreate(&start_ex);
+      cudaEventCreate(&end_ex);
+      
+      // Start inclusive timing
+      clock_gettime(CLOCK_MONOTONIC, &start_in);
 
-  // Copy host arrays to the device
-  cudaMemcpy(dA, hA, bytes, cudaMemcpyHostToDevice);
-  cudaMemcpy(dB, hB, bytes, cudaMemcpyHostToDevice);
+      // Copy host arrays to the device
+      cudaMemcpy(dA, hA, bytes, cudaMemcpyHostToDevice);
+      cudaMemcpy(dB, hB, bytes, cudaMemcpyHostToDevice);
 
-  // Start exclusive timing
-  cudaEventRecord(start_ex, 0);
+      // Start exclusive timing
+      cudaEventRecord(start_ex, 0);
 
-  // Invoke the device kernel which sums the arrays
-  sumArrays<<<nblocks, nthreads>>>(dA, dB, dC);
+      // Invoke the device kernel which sums the arrays
+      sumArrays<<<nblocks, nthreads>>>(dA, dB, dC);
 
-  // End exclusive timing
-  cudaEventRecord(end_ex, 0);
-  cudaEventSynchronize(end_ex);
+      // End exclusive timing
+      cudaEventRecord(end_ex, 0);
+      cudaEventSynchronize(end_ex);
 
-  // Copy the sum array back to the host
-  cudaMemcpy(hC, dC, bytes, cudaMemcpyDeviceToHost);
+      // Copy the sum array back to the host
+      cudaMemcpy(hC, dC, bytes, cudaMemcpyDeviceToHost);
 
-  // End inclusive timing
-  clock_gettime(CLOCK_MONOTONIC, &end_in);
+      // End inclusive timing
+      clock_gettime(CLOCK_MONOTONIC, &end_in);
 
-  // Calculate durations
-  cudaEventElapsedTime(&duration_ex, start_ex, end_ex);
-  cudaEventDestroy(start_ex);
-  cudaEventDestroy(end_ex);
-  duration_in_ns = (end_in.tv_sec - start_in.tv_sec)*1000000000L +
-                    end_in.tv_nsec - start_in.tv_nsec;
-  duration_in = (float)duration_in_ns/1000000;
-
+      // Calculate durations
+      cudaEventElapsedTime(&duration_ex, start_ex, end_ex);
+      cudaEventDestroy(start_ex);
+      cudaEventDestroy(end_ex);
+      duration_in_ns = (end_in.tv_sec - start_in.tv_sec)*1000000000L +
+                        end_in.tv_nsec - start_in.tv_nsec;
+      duration_in = (double)(duration_in_ns/1000000.0);
+      duration_ex_total += (double)duration_ex;
+      duration_in_total += duration_in;
+    }
+  }
+  
+  // Calculate average durations over all runs
+  duration_ex = duration_ex_total/num_runs;
+  duration_in = duration_in_total/num_runs;
+  
   // Calculate the difference between the sum arrays and find the maximum
   // absolute difference
   double max_dif = 0.0;
   for (int i = 0; i < N; i++) {
     difC[i] = hC[i] - refC[i];
-    if (abs(difC[i]) > max_dif) { max_dif = abs(difC[i]); }
+    if (abs(difC[i]) > max_dif) max_dif = abs(difC[i]);
   }
 
   // Free memory
@@ -113,8 +136,9 @@ int main(int argc, char *argv[]) {
   cudaFree(dC);
 
   // Print some information
-  printf("Threads per block:   %12d\n", nthreads);
   printf("Number of integers:  %12d\n", N);
+  printf("Threads per block:   %12d\n", nthreads);
+  printf("Number of runs:      %12d\n", num_runs);
   printf("Maximum difference:  %12.6e\n", max_dif);
   printf("Exclusive time:      %12.6e ms\n", duration_ex);
   printf("Inclusive time:      %12.6e ms\n", duration_in);
