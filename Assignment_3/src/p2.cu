@@ -12,9 +12,12 @@ int int_power(int base, int exponent) {
     return result;
 }
 
-int main() {
-    int N = int_power(2,20);       // Number of random numbers
-    int nthreads = 32;             // Number of threads per block
+int main(int argc, char *argv[]) {
+    if (argc != 3) {  exit(1); }
+    int exponent = atoi(argv[1]);
+    int nthreads = atoi(argv[2]);
+    
+    int N = int_power(2, exponent);  // Number of random numbers
     
     // Allocate host arrays
     int bytes = sizeof(double)*N;
@@ -27,9 +30,9 @@ int main() {
     
     // Allocate device arrays
     double *dA, *dB, *dC;
-    cudaMalloc((void**)&dA, bytes);
-    cudaMalloc((void**)&dB, bytes);
-    cudaMalloc((void**)&dC, bytes);
+    cudaMalloc(&dA, bytes);
+    cudaMalloc(&dB, bytes);
+    cudaMalloc(&dC, bytes);
     
     // Fill host arrays with random numbers between -10 and 10 and sum them for
     // reference
