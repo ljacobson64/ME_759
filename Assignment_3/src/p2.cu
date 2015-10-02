@@ -1,3 +1,4 @@
+#include <cuda.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -18,6 +19,7 @@ int main(int argc, char *argv[]) {
     int nthreads = atoi(argv[2]);
     
     int N = int_power(2, exponent);  // Number of random numbers
+    int nblocks = N/nthreads;
     
     // Allocate host arrays
     int bytes = sizeof(double)*N;
@@ -47,9 +49,22 @@ int main(int argc, char *argv[]) {
     cudaMemcpy(dA, hA, bytes, cudaMemcpyHostToDevice);
     cudaMemcpy(dB, hB, bytes, cudaMemcpyHostToDevice);
     
+    // Set up timing
+    float duration_ex;
+    cudaEvent_t start, end;
+    cudaEventCreate(&start);
+    cudaEventCreate(&end);
+    
     // Invoke the device kernel which sums the arrays
-    int nblocks = N/nthreads;
+    cudaEventRecord(start, 0);
+    
     sumArrays<<<nblocks, nthreads>>>(dA, dB, dC);
+    
+    cudaEventRecord(end, 0);
+    cudaEventSynchronize(end);
+    cudaEventElapsedTime(&duration, start, end);
+    cudaEventDestroy(start);
+    cudaEventDestroy(end);
     
     // Copy the sum array back to the host
     cudaMemcpy(hC, dC, bytes, cudaMemcpyDeviceToHost);
@@ -61,8 +76,21 @@ int main(int argc, char *argv[]) {
         difC[i] = hC[i] - refC[i];
         if (abs(difC[i]) > max_dif) { max_dif = abs(difC[i]); }
     }
-    printf("Num ints: %10d\n", N);
-    printf("Max dif:  %10.4e\n", max_dif);
+    
+    // Free memory
+    free(hA);
+    free(hB);
+    free(hC);
+    free(refC);
+    free(difC);
+    cudaFree(dA);
+    cudaFree(dB);
+    cudaFree(dC);
+    
+    // Print some information
+    printf("Number of integers:    %12d\n", N);
+    printf("Maximum difference:    %12.4e\n", max_dif);
+    printf("Time taken:            %12.6e ms\n", duration_ex);
     
     return 0;
 }
