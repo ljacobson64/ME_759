@@ -6,8 +6,8 @@
 #SBATCH --ntasks=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:1
-#SBATCH --output=`pwd`/p2_%J.out
-#SBATCH --error=`pwd`/p2_%J.err
+#SBATCH --output=/home/jacobson/p2_%J.out
+#SBATCH --error=/home/jacobson/p2_%J.err
 
 for i in $(seq -f "%02g" 5 20); do
   ../bld/p2 $i 32
