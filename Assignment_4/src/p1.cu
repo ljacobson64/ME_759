@@ -63,20 +63,12 @@ int main() {
   cudaMemcpy(C, dC, sizeof(int)*sC, cudaMemcpyDeviceToHost);
   
   // Write result to file
-  //FILE *fp;
-  //fp = fopen("problem2.out", "w");
-  //for (int i = 0; i < hC; i++)
-  //  for (int j = 0; j < wC; j++)
-  //    fprintf(fp, "%12d\n", C[i*wC + j]);
-  //fclose(fp);
-  for (int i = 0; i < hC; i++) {
-    for (int j = 0; j < wC; j++) {
-      B[i*wC + j] = i + j;
-      printf("%12d ", C[i*wC + j]);
-    }
-    printf("\n");
-  }
-  printf("\n");
+  FILE *fp;
+  fp = fopen("problem2.out", "w");
+  for (int i = 0; i < hC; i++)
+    for (int j = 0; j < wC; j++)
+      fprintf(fp, "%12d\n", C[i*wC + j]);
+  fclose(fp);
   
   // Free memory
   free(A);
