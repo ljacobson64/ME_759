@@ -16,7 +16,7 @@ __global__ void cudaMultiplyArrays(int* dA, int* dB, int* dC,
   dC[row*wC + col] = result;
 }
 
-void fill_array(int &A, int hA, int wA) {
+void fill_array(int* A, int hA, int wA) {
   for (int i = 0; i < hA; i++)
     for (int j = 0; j < wA; j++)
       A[i*wA + j] = i + j;
@@ -47,8 +47,8 @@ int main() {
   cudaMalloc(&dC, sizeof(int)*sC);
   
   // Fill A and B with some integers
-  fill_array(A, hA, wA)
-  fill_array(B, hB, wB)
+  fill_array(A, hA, wA);
+  fill_array(B, hB, wB);
   
   // Copy host arrays to the device
   cudaMemcpy(dA, A, sizeof(int)*sA, cudaMemcpyHostToDevice);
