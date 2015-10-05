@@ -50,17 +50,43 @@ int main() {
   fill_array(A, hA, wA);
   fill_array(B, hB, wB);
   
-  // Copy host arrays to the device
-  cudaMemcpy(dA, A, sizeof(int)*sA, cudaMemcpyHostToDevice);
-  cudaMemcpy(dB, B, sizeof(int)*sB, cudaMemcpyHostToDevice);
-  
-  // Invoke the device kernel which multiplies the arrays
+  // Set up block grid
   dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
-  dim3 dimGrid((wC + BLOCK_SIZE - 1)/dimBlock.x, (hC + BLOCK_SIZE - 1)/dimBlock.y);
-  cudaMultiplyArrays<<<dimGrid, dimBlock>>>(dA, dB, dC, hA, wA, wB, wC);
+  dim3 dimGrid((wC + BLOCK_SIZE - 1)/dimBlock.x,
+               (hC + BLOCK_SIZE - 1)/dimBlock.y);
   
-  // Copy the result array back to the host
-  cudaMemcpy(C, dC, sizeof(int)*sC, cudaMemcpyDeviceToHost);
+  // Set up timing
+  struct timespec start_in, end_in;
+  int num_runs = 65536;
+  long dur_in_ns;
+  double dur_in = 0.0, dur_in_total = 0.0;
+  double dur_in_max = 0.0, dur_in_min = 1e99;
+  
+  for (int i = 0; i < num_runs; i++) {
+    // Start inclusive timing
+    clock_gettime(CLOCK_MONOTONIC, &start_in);
+    
+    // Copy host arrays to the device
+    cudaMemcpy(dA, A, sizeof(int)*sA, cudaMemcpyHostToDevice);
+    cudaMemcpy(dB, B, sizeof(int)*sB, cudaMemcpyHostToDevice);
+    
+    // Invoke the device kernel which multiplies the arrays
+    cudaMultiplyArrays<<<dimGrid, dimBlock>>>(dA, dB, dC, hA, wA, wB, wC);
+    
+    // Copy the result array back to the host
+    cudaMemcpy(C, dC, sizeof(int)*sC, cudaMemcpyDeviceToHost);
+    
+    // End inclusive timing
+    clock_gettime(CLOCK_MONOTONIC, &end_in);
+    
+    // Calculate duration
+    dur_in_ns = (end_in.tv_sec - start_in.tv_sec)*1000000000L +
+                 end_in.tv_nsec - start_in.tv_nsec;
+    dur_in = (double)(dur_in_ns/1000000.0);
+    dur_in_total += dur_in;
+    if (dur_in > dur_in_max) dur_in_max = dur_in;
+    if (dur_in < dur_in_min) dur_in_min = dur_in;
+  }
   
   // Write result to file
   FILE *fp;
@@ -77,6 +103,17 @@ int main() {
   cudaFree(dA);
   cudaFree(dB);
   cudaFree(dC);
+  
+  // Get device properties
+  cudaDeviceProp gpu_props;
+  cudaGetDeviceProperties(&gpu_props, 0);
+  
+  // Print some information
+  printf("Device name: %s\n", gpu_props.name);
+  printf("Number of runs: %12d\n", num_runs);
+  printf("Inclusive time (maximum): %12.6e ms\n", dur_in_max);
+  printf("Inclusive time (average): %12.6e ms\n", dur_in_total/num_runs);
+  printf("Inclusive time (minimum): %12.6e ms\n", dur_in_min);
   
   return 0;
 }
