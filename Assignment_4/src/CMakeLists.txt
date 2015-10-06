@@ -4,4 +4,4 @@ find_package(CUDA REQUIRED)
 set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}; -gencode arch=compute_20,code=sm_20)
 
 cuda_add_executable(p1 p1.cu)
-cuda_add_executable(matrixadd matrixadd.cu)
+cuda_add_executable(p2 matrixadd.cu)
