@@ -7,13 +7,13 @@
 
 __global__ void cudaMultiplyArrays(int* dA, int* dB, int* dC,
                                    int hA, int wA, int wB, int wC) {
-  int row = blockIdx.y*blockDim.y + threadIdx.y;
-  int col = blockIdx.x*blockDim.x + threadIdx.x;
-  if (row > hA || col > wB) return;
+  int y = blockIdx.y*blockDim.y + threadIdx.y;
+  int x = blockIdx.x*blockDim.x + threadIdx.x;
+  if (y > hA || x > wB) return;
   int result = 0;
   for (int e = 0; e < wA; e++)
-    result += dA[row*wA + e]*dB[e*wB + col];
-  dC[row*wC + col] = result;
+    result += dA[y*wA + e]*dB[e*wB + x];
+  dC[y*wC + x] = result;
 }
 
 void fill_array(int* A, int hA, int wA) {
