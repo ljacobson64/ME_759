@@ -55,7 +55,7 @@ __global__ void MatrixAddKernel(const float* Melems, const float alpha,
   int y = blockIdx.y*blockDim.y + threadIdx.y;
   int x = blockIdx.x*blockDim.x + threadIdx.x;
   int ind = y*WP + x;
-  if (y > hP || x > wP) return;
+  if (y > HP || x > WP) return;
   Pelems[ind] = alpha*Melems[ind] + beta*Nelems[ind];
 }
 
