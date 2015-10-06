@@ -109,6 +109,7 @@ int main(int argc, char** argv) {
   // alpha*M + beta*N on the device
   float alpha = 1.f;
   float beta  = 1.f;
+  
   // Time the operation
   MatrixAddOnDevice(M, alpha, N, beta, P);
 
