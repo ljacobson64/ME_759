@@ -203,9 +203,28 @@ int main(int argc, char** argv) {
 ////////////////////////////////////////////////////////////////////////////////
 //! wrapper around the device implementation
 ////////////////////////////////////////////////////////////////////////////////
-void MatrixAddOnDevice(const Matrix M, const float alpha, const Matrix N, const float beta, Matrix P)
+void MatrixAddOnDevice(const Matrix M, const float alpha,
+                       const Matrix N, const float beta, Matrix P)
 {
-   // ADD YOUR CODE HERE
+  // Allocate device matrices
+  Matrix dM = AllocateDeviceMatrix(M);
+  Matrix dN = AllocateDeviceMatrix(N);
+  Matrix dP = AllocateDeviceMatrix(P);
+  
+  // Copy host arrays to the device
+  CopyToDeviceMatrix(dM, M);
+  CopyToDeviceMatrix(dN, N);
+  
+  // Invoke the kernel
+  int block_size = 16;
+  dim3 dimBlock(block_size, block_size);
+  dim3 dimGrid((P.width  + block_size - 1)/dimBlock.x,
+               (P.height + block_size - 1)/dimBlock.y);
+  MatrixAddKernel<<<dimGrid, dimBlock>>>(dM.elements, alpha, dN.elements, beta,
+                                         dP.elements);
+  
+  // Copy the result from the device back to the host
+  CopyFromDeviceMatrix(P, dP);
 }
 
 // Allocate a device matrix of same size as M.
