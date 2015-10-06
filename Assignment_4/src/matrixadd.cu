@@ -194,8 +194,8 @@ void MatrixAddOnDevice(const Matrix M, const float alpha,
   // Set up block grid
   // int block_size = 16; // Set in matrixadd.h
   dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
-  dim3 dimGrid((P.width  + dimBlock.x - 1)/dimBlock.x,
-               (P.height + dimBlock.y - 1)/dimBlock.y);
+  dim3 dimGrid((P.width  + BLOCK_SIZE - 1)/dimBlock.x,
+               (P.height + BLOCK_SIZE - 1)/dimBlock.y);
 
   // Allocate device matrices
   Matrix dM = AllocateDeviceMatrix(M);

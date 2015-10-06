@@ -52,10 +52,12 @@
 __global__ void MatrixAddKernel(const float* Melems, const float alpha,
                                 const float* Nelems, const float beta,
                                       float* Pelems) {
-  unsigned int y = blockIdx.y*blockDim.y + threadIdx.y;
-  unsigned int x = blockIdx.x*blockDim.x + threadIdx.x;
-  unsigned int ind = y*WP + x;
+  int y = blockIdx.y*blockDim.y + threadIdx.y;
+  int x = blockIdx.x*blockDim.x + threadIdx.x;
+  
   // if (y > HP || x > WP) return;
+  
+  int ind = y*WP + x;
   Pelems[ind] = alpha*Melems[ind] + beta*Nelems[ind];
 }
 
