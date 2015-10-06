@@ -176,7 +176,7 @@ int main(int argc, char** argv) {
    // check if the device result is equivalent to the expected solution
    bool res = CompareResults(reference.elements, P.elements, 
       size_elements, 0.0001f);
-   printf("CPU execution time: %f ms\n", msecTotal);
+   printf("CPU execution time: %24.6f ms\n", msecTotal);
    printf("Test %s\n", (1 == res) ? "PASSED" : "FAILED");
 
    // output result if output file is requested
@@ -206,14 +206,26 @@ int main(int argc, char** argv) {
 void MatrixAddOnDevice(const Matrix M, const float alpha,
                        const Matrix N, const float beta, Matrix P)
 {
+  // Set up timing
+  struct timespec start_in, end_in;
+  cudaEvent_t start_ex, end_ex;
+  cudaEventCreate(&start_ex);
+  cudaEventCreate(&end_ex);
+  
   // Allocate device matrices
   Matrix dM = AllocateDeviceMatrix(M);
   Matrix dN = AllocateDeviceMatrix(N);
   Matrix dP = AllocateDeviceMatrix(P);
   
+  // Start inclusive timing
+  clock_gettime(CLOCK_MONOTONIC, &start_in);
+  
   // Copy host arrays to the device
   CopyToDeviceMatrix(dM, M);
   CopyToDeviceMatrix(dN, N);
+  
+  // Start exclusive timing
+  cudaEventRecord(start_ex, 0);
   
   // Invoke the kernel
   int block_size = 16;
@@ -223,8 +235,26 @@ void MatrixAddOnDevice(const Matrix M, const float alpha,
   MatrixAddKernel<<<dimGrid, dimBlock>>>(dM.elements, alpha, dN.elements, beta,
                                          dP.elements);
   
+  // End exclusive timing
+  cudaEventRecord(end_ex, 0);
+  cudaEventSynchronize(end_ex);
+  
   // Copy the result from the device back to the host
   CopyFromDeviceMatrix(P, dP);
+  
+  // End inclusive timing
+  clock_gettime(CLOCK_MONOTONIC, &end_in);
+  
+  // Calculate durations
+  float dur_ex;
+  cudaEventElapsedTime(&dur_ex, start_ex, end_ex);
+  cudaEventDestroy(start_ex);
+  cudaEventDestroy(end_ex);
+  long dur_in_ns = (end_in.tv_sec - start_in.tv_sec)*1000000000l +
+                    end_in.tv_nsec - start_in.tv_nsec;
+  double dur_in = (double)(dur_in_ns/1000000.0);
+  printf("GPU execution time (exclusive): %12.6f ms\n", dur_ex);
+  printf("GPU execution time (inclusive): %12.6f ms\n", dur_in);
 }
 
 // Allocate a device matrix of same size as M.
