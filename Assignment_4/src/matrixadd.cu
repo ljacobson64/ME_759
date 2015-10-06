@@ -191,16 +191,22 @@ int main(int argc, char** argv) {
 ////////////////////////////////////////////////////////////////////////////////
 void MatrixAddOnDevice(const Matrix M, const float alpha,
                        const Matrix N, const float beta, Matrix P) {
-  // Set up timing
-  struct timespec start_in, end_in;
-  cudaEvent_t start_ex, end_ex;
-  cudaEventCreate(&start_ex);
-  cudaEventCreate(&end_ex);
+  // Set up block grid
+  // int block_size = 16; // Set in matrixadd.h
+  dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
+  dim3 dimGrid((P.width  + dimBlock.x - 1)/dimBlock.x,
+               (P.height + dimBlock.y - 1)/dimBlock.y);
 
   // Allocate device matrices
   Matrix dM = AllocateDeviceMatrix(M);
   Matrix dN = AllocateDeviceMatrix(N);
   Matrix dP = AllocateDeviceMatrix(P);
+
+  // Set up timing
+  struct timespec start_in, end_in;
+  cudaEvent_t start_ex, end_ex;
+  cudaEventCreate(&start_ex);
+  cudaEventCreate(&end_ex);
 
   // Start inclusive timing
   clock_gettime(CLOCK_MONOTONIC, &start_in);
@@ -213,10 +219,6 @@ void MatrixAddOnDevice(const Matrix M, const float alpha,
   cudaEventRecord(start_ex, 0);
 
   // Invoke the kernel
-  int block_size = 16;
-  dim3 dimBlock(block_size, block_size);
-  dim3 dimGrid((P.width  + block_size - 1)/dimBlock.x,
-               (P.height + block_size - 1)/dimBlock.y);
   MatrixAddKernel<<<dimGrid, dimBlock>>>(dM.elements, alpha, dN.elements, beta,
                                          dP.elements);
 
@@ -300,7 +302,8 @@ bool CompareResults(float* A, float* B, int elements, float eps) {
 int ReadFile(Matrix* M, char* file_name) {
   unsigned int data_read = MATRIX_SIZE*MATRIX_SIZE;
   std::ifstream ifile(file_name);
-  for (unsigned int i = 0; i < data_read; i++) ifile>>M->elements[i];
+  for (unsigned int i = 0; i < data_read; i++)
+    ifile>>M->elements[i];
   ifile.close();
   return data_read;
 }
@@ -308,6 +311,7 @@ int ReadFile(Matrix* M, char* file_name) {
 // Write a 16x16 floating point matrix to file
 void WriteFile(Matrix M, char* file_name) {
   std::ofstream ofile(file_name);
-  for (unsigned int i = 0; i < M.width*M.height; i++) ofile<<M.elements[i];
+  for (unsigned int i = 0; i < M.width*M.height; i++)
+    ofile<<M.elements[i];
   ofile.close();
 }

@@ -52,8 +52,8 @@ int main() {
 
   // Set up block grid
   dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
-  dim3 dimGrid((wC + BLOCK_SIZE - 1)/dimBlock.x,
-               (hC + BLOCK_SIZE - 1)/dimBlock.y);
+  dim3 dimGrid((wC + dimBlock.x - 1)/dimBlock.x,
+               (hC + dimBlock.y - 1)/dimBlock.y);
 
   // Set up timing
   struct timespec start_in, end_in;
@@ -111,9 +111,9 @@ int main() {
   // Print some information
   printf("Device name: %s\n", gpu_props.name);
   printf("Number of runs: %12d\n", num_runs);
-  printf("Inclusive time (maximum): %12.6e ms\n", dur_in_max);
-  printf("Inclusive time (average): %12.6e ms\n", dur_in_total/num_runs);
-  printf("Inclusive time (minimum): %12.6e ms\n", dur_in_min);
+  printf("Inclusive time (maximum): %12.6f ms\n", dur_in_max);
+  printf("Inclusive time (average): %12.6f ms\n", dur_in_total/num_runs);
+  printf("Inclusive time (minimum): %12.6f ms\n", dur_in_min);
 
   return 0;
 }
