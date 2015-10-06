@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:1
-#SBATCH --output=/home/jacobson/p1_%J.out
-#SBATCH --error=/home/jacobson/p1_%J.err
+#SBATCH --output=/home/jacobson/p3_%J.out
+#SBATCH --error=/home/jacobson/p3_%J.err
 
-../bld/p1
+../bld/p3
