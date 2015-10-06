@@ -47,8 +47,9 @@
 //#include <cutil.h>
 
 // includes, kernels
-//#include "matrixadd_kernel.cu"
 #include "matrixadd.h"
+#include "matrixadd_kernel.cu"
+#include "matrixadd_gold.cpp"
 ////////////////////////////////////////////////////////////////////////////////
 // declarations, forward
 
