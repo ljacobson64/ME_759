@@ -37,25 +37,24 @@
  * Host code.
  */
 
-// includes, system
+// Includes, system
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
 #include <fstream>
 
-// includes, project
+// Includes, project
 //#include <cutil.h>
 
-// includes, kernels
+// Includes, kernels
 #include "matrixadd.h"
 #include "matrixadd_kernel.cu"
 #include "matrixadd_gold.cpp"
 
 ////////////////////////////////////////////////////////////////////////////////
-// declarations, forward
+// Declarations, forward
 ////////////////////////////////////////////////////////////////////////////////
-
 extern "C"
 void computeGold(float*, const float*, const float, const float*,
                  const float, unsigned int, unsigned int);
@@ -100,8 +99,8 @@ int main(int argc, char** argv) {
     P  = AllocateMatrix(MATRIX_SIZE, MATRIX_SIZE, 0);
     errorM = ReadFile(&M, argv[1]);
     errorN = ReadFile(&N, argv[2]);
-    // check for read errors
-    if(errorM != size_elements || errorN != size_elements) {
+    // Check for read errors
+    if (errorM != size_elements || errorN != size_elements) {
       printf("Error reading input files %d, %d\n", errorM, errorN);
       return 1;
     }
@@ -110,10 +109,10 @@ int main(int argc, char** argv) {
   // alpha*M + beta*N on the device
   float alpha = 1.f;
   float beta  = 1.f;
-  //time the operation
+  // Time the operation
   MatrixAddOnDevice(M, alpha, N, beta, P);
 
-  // compute the matrix addition on the CPU for comparison
+  // Compute the matrix addition on the CPU for comparison
   Matrix reference = AllocateMatrix(MATRIX_SIZE, MATRIX_SIZE, 0);
   cudaError_t error;
   cudaEvent_t start;
@@ -139,6 +138,7 @@ int main(int argc, char** argv) {
     fprintf(stderr, "Failed to record start event (error code %s)!\n", cudaGetErrorString(error));
     exit(EXIT_FAILURE);
   }
+  
   computeGold(reference.elements, M.elements, alpha, N.elements, beta, HM, WM);
 
   // Record the stop event
@@ -165,15 +165,15 @@ int main(int argc, char** argv) {
     exit(EXIT_FAILURE);
   }
 
-  // check if the device result is equivalent to the expected solution
+  // Check if the device result is equivalent to the expected solution
   bool res = CompareResults(reference.elements, P.elements, size_elements,
                             0.0001f);
   printf("CPU execution time: %24.6f ms\n", msecTotal);
   printf("Test %s\n", (1 == res) ? "PASSED" : "FAILED");
 
-  // output result if output file is requested
-  if(argc == 4)      WriteFile(P, argv[3]);
-  else if(argc == 2) WriteFile(P, argv[1]);
+  // Output result if output file is requested
+  if (argc == 4)      WriteFile(P, argv[3]);
+  else if (argc == 2) WriteFile(P, argv[1]);
 
   // Free host matrices
   free(M.elements);
@@ -255,8 +255,8 @@ Matrix AllocateDeviceMatrix(const Matrix M) {
 }
 
 // Allocate a matrix of dimensions height*width
-//	If init == 0, initialize to all zeroes.
-//	If init == 1, perform random initialization.
+// If init == 0, initialize to all zeroes.
+// If init == 1, perform random initialization.
 Matrix AllocateMatrix(int height, int width, int init) {
   Matrix M;
   M.width = M.pitch = width;
@@ -286,7 +286,7 @@ void CopyFromDeviceMatrix(Matrix Mhost, const Matrix Mdevice) {
   int size = Mdevice.width*Mdevice.height*sizeof(float);
   cudaMemcpy(Mhost.elements, Mdevice.elements, size, cudaMemcpyDeviceToHost);
 }
-//compare the data stored in two arrays on the host
+// Compare the data stored in two arrays on the host
 bool CompareResults(float* A, float* B, int elements, float eps) {
   for (unsigned int i = 0; i < elements; i++) {
     float error = A[i] - B[i];
