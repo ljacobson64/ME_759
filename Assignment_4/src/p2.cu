@@ -8,19 +8,15 @@
 // Kernel using global memory
 __global__ void cudaMultiplyArraysGlobal(int* dA, int* dB, int* dC,
     int hA, int wA, int hB, int wB, int hC, int wC) {
-  int tx = threadIdx.x;
-  int ty = threadIdx.y;
-  int bx = blockIdx.x;
-  int by = blockIdx.y;
-  
-  int y = by*BLOCK_SIZE + ty;  // row
-  int x = bx*BLOCK_SIZE + tx;  // column
+  int y = blockIdx.y*BLOCK_SIZE + threadIdx.y;  // row
+  int x = blockIdx.x*BLOCK_SIZE + threadIdx.x;  // column
 
-  if (y > hA || x > wB) return;
+  if (y >= hA || x >= wB) return;
 
   int result = 0;
-  for (int e = 0; e < wA; e++)
-    result += dA[y*wA + e]*dB[e*wB + x];
+  for (unsigned int i = 0; i < wA; i++) {
+    result += dA[y*wA + i]*dB[i*wB + x];
+  }
 
   dC[y*wC + x] = result;
 }
@@ -37,9 +33,9 @@ __global__ void cudaMultiplyArraysShared(int* dA, int* dB, int* dC,
   int ty = threadIdx.y;
   int bx = blockIdx.x;
   int by = blockIdx.y;
-
+  
   // Number of subarrays for each block
-  int nsubs = wA/BLOCK_SIZE;
+  int nsubs = (wA + BLOCK_SIZE - 1)/BLOCK_SIZE;
 
   // Initialize subarrays in shared memory
   __shared__ int sdA[BLOCK_SIZE][BLOCK_SIZE];
@@ -47,33 +43,49 @@ __global__ void cudaMultiplyArraysShared(int* dA, int* dB, int* dC,
 
   // Loop over each subarray
   int result = 0;
-  for (int i = 0; i < nsubs; i++) {
-    sdA[ty][tx] = dA[(by*BLOCK_SIZE + ty)*wA + ( i*BLOCK_SIZE + tx)];
-    sdB[ty][tx] = dB[( i*BLOCK_SIZE + ty)*wB + (bx*BLOCK_SIZE + tx)];
+  for (unsigned int r = 0; r < nsubs; r++) {
+    // Fill the subarrays in shared memory
+    sdA[ty][tx] = dA[(by*BLOCK_SIZE + ty)*wA + ( r*BLOCK_SIZE + tx)];
+    sdB[ty][tx] = dB[( r*BLOCK_SIZE + ty)*wB + (bx*BLOCK_SIZE + tx)];
 
     __syncthreads();
 
-    for (int k = 0; k < BLOCK_SIZE; k++)
-      result += sdA[ty][k]*sdB[k][tx];
+    // Don't add out of bounds elements
+    int s_max;
+    if ((r+1)*BLOCK_SIZE > wA) {
+      s_max = wA - r*BLOCK_SIZE;
+    } else {
+      s_max = BLOCK_SIZE;
+    }
+
+    for (unsigned int s = 0; s < s_max; s++) {
+      result += sdA[ty][s]*sdB[s][tx];
+    }
 
     __syncthreads();
   }
+
+  // Don't fill out of bounds elements
+  if (bx*BLOCK_SIZE + tx >= wC) return;
+  if (by*BLOCK_SIZE + ty >= hC) return;
 
   // Fill result array
   dC[(by*BLOCK_SIZE + ty)*wB + (bx*BLOCK_SIZE + tx)] = result;
 }
 
 void fill_array(int* A, int hA, int wA) {
-  for (int i = 0; i < hA; i++)
-    for (int j = 0; j < wA; j++)
-      A[i*wA + j] = i + j;
+  for (unsigned int i = 0; i < hA; i++) {
+    for (unsigned int j = 0; j < wA; j++) {
+      A[i*wA + j] = 10*i + j;
+    }
+  }
 }
 
 int main() {
   // Array sizes
-  int m = 16;
-  int n = 32;
-  int p =  1;
+  int m = 15;
+  int n = 15;
+  int p = 15;
   int hA = m, wA = n;
   int hB = n, wB = p;
   int hC = m, wC = p;
@@ -104,7 +116,7 @@ int main() {
 
   // Set up timing
   struct timespec start_in, end_in;
-  int num_runs = 65536;
+  int num_runs = 1;
   long dur_in_ns;
   double dur_in = 0.0, dur_in_total = 0.0;
   double dur_in_max = 0.0, dur_in_min = 1e99;
@@ -118,13 +130,13 @@ int main() {
     cudaMemcpy(dB, B, sizeof(int)*sB, cudaMemcpyHostToDevice);
 
     // Invoke the device kernel which multiplies the arrays using global memory
-    cudaMultiplyArraysGlobal<<<dimGrid, dimBlock>>>(dA, dB, dC,
-                                                    hA, wA, hB, wB, hC, wC);
+    //cudaMultiplyArraysGlobal<<<dimGrid, dimBlock>>>
+    //    (dA, dB, dC, hA, wA, hB, wB, hC, wC);
 
     // The kernel with shared memory does work, but only when the matrix
     // dimensions are integer multiples of the block size
-    //cudaMultiplyArraysShared<<<dimGrid, dimBlock>>>(dA, dB, dC,
-    //                                                hA, wA, hB, wB, hC, wC);
+    cudaMultiplyArraysShared<<<dimGrid, dimBlock>>>
+        (dA, dB, dC, hA, wA, hB, wB, hC, wC);
 
     // Copy the result array back to the host
     cudaMemcpy(C, dC, sizeof(int)*sC, cudaMemcpyDeviceToHost);
@@ -145,8 +157,9 @@ int main() {
   FILE *fp;
   fp = fopen("problem2.out", "w");
   for (int i = 0; i < hC; i++) {
-    for (int j = 0; j < wC; j++)
+    for (int j = 0; j < wC; j++) {
       fprintf(fp, "%12d ", C[i*wC + j]);
+    }
     fprintf(fp, "\n");
   }
   fclose(fp);

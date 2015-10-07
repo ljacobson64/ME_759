@@ -109,7 +109,7 @@ int main(int argc, char** argv) {
   // alpha*M + beta*N on the device
   float alpha = 1.f;
   float beta  = 1.f;
-  
+
   // Time the operation
   MatrixAddOnDevice(M, alpha, N, beta, P);
 
@@ -139,7 +139,7 @@ int main(int argc, char** argv) {
     fprintf(stderr, "Failed to record start event (error code %s)!\n", cudaGetErrorString(error));
     exit(EXIT_FAILURE);
   }
-  
+
   computeGold(reference.elements, M.elements, alpha, N.elements, beta, HM, WM);
 
   // Record the stop event
@@ -219,8 +219,8 @@ void MatrixAddOnDevice(const Matrix M, const float alpha,
   cudaEventRecord(start_ex, 0);
 
   // Invoke the kernel
-  MatrixAddKernel<<<dimGrid, dimBlock>>>(dM.elements, alpha, dN.elements, beta,
-                                         dP.elements);
+  MatrixAddKernel<<<dimGrid, dimBlock>>>
+      (dM.elements, alpha, dN.elements, beta, dP.elements);
 
   // End exclusive timing
   cudaEventRecord(end_ex, 0);
@@ -269,8 +269,9 @@ Matrix AllocateMatrix(int height, int width, int init) {
 
   M.elements = (float*)malloc(size*sizeof(float));
 
-  for (unsigned int i = 0; i < M.height*M.width; i++)
+  for (unsigned int i = 0; i < M.height*M.width; i++) {
     M.elements[i] = (init == 0) ? (0.0f) : (rand()/(float)RAND_MAX);
+  }
 
   return M;
 }
@@ -302,8 +303,9 @@ bool CompareResults(float* A, float* B, int elements, float eps) {
 int ReadFile(Matrix* M, char* file_name) {
   unsigned int data_read = MATRIX_SIZE*MATRIX_SIZE;
   std::ifstream ifile(file_name);
-  for (unsigned int i = 0; i < data_read; i++)
+  for (unsigned int i = 0; i < data_read; i++) {
     ifile>>M->elements[i];
+  }
   ifile.close();
   return data_read;
 }
@@ -311,7 +313,8 @@ int ReadFile(Matrix* M, char* file_name) {
 // Write a 16x16 floating point matrix to file
 void WriteFile(Matrix M, char* file_name) {
   std::ofstream ofile(file_name);
-  for (unsigned int i = 0; i < M.width*M.height; i++)
+  for (unsigned int i = 0; i < M.width*M.height; i++) {
     ofile<<M.elements[i];
+  }
   ofile.close();
 }
