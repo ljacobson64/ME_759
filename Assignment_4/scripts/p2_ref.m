@@ -1,8 +1,8 @@
 clear; clc;
 
-m = 15;
-n = 15;
-p = 15;
+m = 16;
+n = 32;
+p = 1;
 
 A = zeros(m,n);
 B = zeros(n,p);

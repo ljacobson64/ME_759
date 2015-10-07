@@ -5,8 +5,8 @@
 
 #define BLOCK_SIZE 16
 
-// Kernel using global memory
-__global__ void cudaMultiplyArraysGlobal(int* dA, int* dB, int* dC,
+// Kernel
+__global__ void cudaMultiplyArrays(int* dA, int* dB, int* dC,
     int hA, int wA, int hB, int wB, int hC, int wC) {
   int y = blockIdx.y*BLOCK_SIZE + threadIdx.y;  // row
   int x = blockIdx.x*BLOCK_SIZE + threadIdx.x;  // column
@@ -29,7 +29,7 @@ __global__ void cudaMultiplyArraysShared(int* dA, int* dB, int* dC,
   int ty = threadIdx.y;
   int bx = blockIdx.x;
   int by = blockIdx.y;
-  
+
   // Number of subarrays for each block
   int nsubs = (wA + BLOCK_SIZE - 1)/BLOCK_SIZE;
 
@@ -69,6 +69,22 @@ __global__ void cudaMultiplyArraysShared(int* dA, int* dB, int* dC,
   dC[(by*BLOCK_SIZE + ty)*wB + (bx*BLOCK_SIZE + tx)] = result;
 }
 
+int int_power(x, n) {
+  if (n <= 0) return 1;
+  int y = 1;
+  while (n > 1) {
+    if (n % 2 == 0) {
+      x *= x;
+      n /= 2;
+    } else {
+      y *= x;
+      x *= x;
+      n = (n-1)/2;
+    }
+  }
+  return x*y;
+}
+
 void fill_array(int* A, int hA, int wA) {
   for (unsigned int i = 0; i < hA; i++) {
     for (unsigned int j = 0; j < wA; j++) {
@@ -78,22 +94,27 @@ void fill_array(int* A, int hA, int wA) {
 }
 
 int main(int argc, char *argv[]) {
-  int m, n, p, nruns, prt;
+  int m, n, p, nruns;
+  bool shared, prt;
   if (argc == 1) {
     m = 16;
     n = 32;
     p = 1;
     nruns = 65536;
+    shared = false;
     prt = true;
-  } else if (argc == 6) {
-    m = atoi(argv[1]);
-    n = atoi(argv[2]);
-    p = atoi(argv[3]);
-    nruns = atoi(argv[4]);
-    if (atoi(argv[5]) > 0) prt = true;
+  } else if (argc == 5) {
+    int siz = int_power(2, atoi(argv[1]));
+    m = siz;
+    n = siz;
+    p = siz;
+    nruns = int_power(2, atoi(argv[2]));
+    if (atoi(argv[3]) > 0) shared = true;
+    else shared = false;
+    if (atoi(argv[4]) > 0) prt = true;
     else prt = false;
   }
-  
+
   // Array sizes
   int hA = m, wA = n;
   int hB = n, wB = p;
@@ -127,7 +148,7 @@ int main(int argc, char *argv[]) {
   struct timespec start_in, end_in;
   long dur_in_ns;
   double dur_in = 0.0, dur_in_total = 0.0;
-  double dur_in_max = 0.0, dur_in_min = 1e99;
+  double dur_in_min = 1e99, dur_in_max = 0.0;
 
   for (int i = 0; i < nruns; i++) {
     // Start inclusive timing
@@ -137,13 +158,15 @@ int main(int argc, char *argv[]) {
     cudaMemcpy(dA, A, sizeof(int)*sA, cudaMemcpyHostToDevice);
     cudaMemcpy(dB, B, sizeof(int)*sB, cudaMemcpyHostToDevice);
 
-    // Invoke the device kernel which multiplies the arrays using global memory
-    cudaMultiplyArraysGlobal<<<dimGrid, dimBlock>>>
-        (dA, dB, dC, hA, wA, hB, wB, hC, wC);
-
-    // Invoke the device kernel which multiplies the arrays using shared memory
-    //cudaMultiplyArraysShared<<<dimGrid, dimBlock>>>
-    //    (dA, dB, dC, hA, wA, hB, wB, hC, wC);
+    if (shared) {
+      // Invoke the device kernel which multiplies the arrays with shared memory
+      cudaMultiplyArraysShared<<<dimGrid, dimBlock>>>
+          (dA, dB, dC, hA, wA, hB, wB, hC, wC);
+    } else {
+      // Invoke the device kernel which multiplies the arrays
+      cudaMultiplyArrays<<<dimGrid, dimBlock>>>
+          (dA, dB, dC, hA, wA, hB, wB, hC, wC);
+    }
 
     // Copy the result array back to the host
     cudaMemcpy(C, dC, sizeof(int)*sC, cudaMemcpyDeviceToHost);
@@ -156,8 +179,8 @@ int main(int argc, char *argv[]) {
                  end_in.tv_nsec - start_in.tv_nsec;
     dur_in = (double)(dur_in_ns/1000000.0);
     dur_in_total += dur_in;
-    if (dur_in > dur_in_max) dur_in_max = dur_in;
     if (dur_in < dur_in_min) dur_in_min = dur_in;
+    if (dur_in > dur_in_max) dur_in_max = dur_in;
   }
 
   // Write result to file
@@ -170,6 +193,7 @@ int main(int argc, char *argv[]) {
       }
       fprintf(fp, "\n");
     }
+    fprintf(fp, "\n");
     fclose(fp);
   }
 
@@ -187,14 +211,16 @@ int main(int argc, char *argv[]) {
 
   // Print some information
   printf("Device name: %s\n", gpu_props.name);
-  printf("Dimension 1 (m): %12d\n", m);
-  printf("Dimension 2 (n): %12d\n", n);
-  printf("Dimension 3 (p): %12d\n", p);
-  printf("Block size:      %12d\n", BLOCK_SIZE);
-  printf("Number of runs:  %12d\n", nruns);
-  printf("Inclusive time (maximum): %12.6f ms\n", dur_in_max);
-  printf("Inclusive time (average): %12.6f ms\n", dur_in_total/nruns);
-  printf("Inclusive time (minimum): %12.6f ms\n", dur_in_min);
+  printf("Dimension 1 (m):      %12d\n", m);
+  printf("Dimension 2 (n):      %12d\n", n);
+  printf("Dimension 3 (p):      %12d\n", p);
+  printf("Block size:           %12d\n", BLOCK_SIZE);
+  printf("Number of runs:       %12d\n", nruns);
+  printf("Using shared memory?: %12s\n", shared ? "True" : "False");
+  printf("Inclusive time (min): %12.6f ms\n", dur_in_min);
+  printf("Inclusive time (avg): %12.6f ms\n", dur_in_total/nruns);
+  printf("Inclusive time (max): %12.6f ms\n", dur_in_max);
+  printf("\n");
 
   return 0;
 }
