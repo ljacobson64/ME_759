@@ -9,9 +9,9 @@
 #SBATCH --output=/home/jacobson/p2_%J.out
 #SBATCH --error=/home/jacobson/p2_%J.err
 
-for i in $(seq -f "%02g" 5 12); do
+for i in $(seq -f "%2g" 5 12); do
   ../bld/p2 $i $(( 28-2*i )) 1 0
 done
-for i in $(seq -f "%02g" 5 12); do
+for i in $(seq -f "%2g" 5 12); do
   ../bld/p2 $i $(( 28-2*i )) 0 0
 done

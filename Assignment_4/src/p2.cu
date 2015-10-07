@@ -69,7 +69,7 @@ __global__ void cudaMultiplyArraysShared(int* dA, int* dB, int* dC,
   dC[(by*BLOCK_SIZE + ty)*wB + (bx*BLOCK_SIZE + tx)] = result;
 }
 
-int int_power(x, n) {
+int int_power(int x, int n) {
   if (n <= 0) return 1;
   int y = 1;
   while (n > 1) {
