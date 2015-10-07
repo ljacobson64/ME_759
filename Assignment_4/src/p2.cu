@@ -22,10 +22,6 @@ __global__ void cudaMultiplyArraysGlobal(int* dA, int* dB, int* dC,
 }
 
 // Kernel using shared memory
-//
-// Right now this works if and only if the matrices have dimensions that are
-// integer multiples of the block size; i.e. (16x32)*(32,1) would not work
-// because 1 % 16 != 0
 __global__ void cudaMultiplyArraysShared(int* dA, int* dB, int* dC,
     int hA, int wA, int hB, int wB, int hC, int wC) {
   // Thread and block indices
@@ -83,9 +79,9 @@ void fill_array(int* A, int hA, int wA) {
 
 int main() {
   // Array sizes
-  int m = 15;
-  int n = 15;
-  int p = 15;
+  int m = 32;
+  int n = 16;
+  int p = 1;
   int hA = m, wA = n;
   int hB = n, wB = p;
   int hC = m, wC = p;
@@ -133,8 +129,7 @@ int main() {
     //cudaMultiplyArraysGlobal<<<dimGrid, dimBlock>>>
     //    (dA, dB, dC, hA, wA, hB, wB, hC, wC);
 
-    // The kernel with shared memory does work, but only when the matrix
-    // dimensions are integer multiples of the block size
+    // Invoke the device kernel which multiplies the arrays using shared memory
     cudaMultiplyArraysShared<<<dimGrid, dimBlock>>>
         (dA, dB, dC, hA, wA, hB, wB, hC, wC);
 
