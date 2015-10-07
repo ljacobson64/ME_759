@@ -112,7 +112,7 @@ int main() {
 
   // Set up timing
   struct timespec start_in, end_in;
-  int num_runs = 1;
+  int num_runs = 65536;
   long dur_in_ns;
   double dur_in = 0.0, dur_in_total = 0.0;
   double dur_in_max = 0.0, dur_in_min = 1e99;
@@ -126,12 +126,12 @@ int main() {
     cudaMemcpy(dB, B, sizeof(int)*sB, cudaMemcpyHostToDevice);
 
     // Invoke the device kernel which multiplies the arrays using global memory
-    //cudaMultiplyArraysGlobal<<<dimGrid, dimBlock>>>
-    //    (dA, dB, dC, hA, wA, hB, wB, hC, wC);
+    cudaMultiplyArraysGlobal<<<dimGrid, dimBlock>>>
+        (dA, dB, dC, hA, wA, hB, wB, hC, wC);
 
     // Invoke the device kernel which multiplies the arrays using shared memory
-    cudaMultiplyArraysShared<<<dimGrid, dimBlock>>>
-        (dA, dB, dC, hA, wA, hB, wB, hC, wC);
+    //cudaMultiplyArraysShared<<<dimGrid, dimBlock>>>
+    //    (dA, dB, dC, hA, wA, hB, wB, hC, wC);
 
     // Copy the result array back to the host
     cudaMemcpy(C, dC, sizeof(int)*sC, cudaMemcpyDeviceToHost);
