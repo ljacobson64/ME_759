@@ -72,15 +72,15 @@ __global__ void cudaMultiplyArraysShared(int* dA, int* dB, int* dC,
 void fill_array(int* A, int hA, int wA) {
   for (unsigned int i = 0; i < hA; i++) {
     for (unsigned int j = 0; j < wA; j++) {
-      A[i*wA + j] = 10*i + j;
+      A[i*wA + j] = i + j;
     }
   }
 }
 
 int main() {
   // Array sizes
-  int m = 32;
-  int n = 16;
+  int m = 16;
+  int n = 32;
   int p = 1;
   int hA = m, wA = n;
   int hB = n, wB = p;
