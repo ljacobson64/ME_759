@@ -77,11 +77,24 @@ void fill_array(int* A, int hA, int wA) {
   }
 }
 
-int main() {
+int main(int argc, char *argv[]) {
+  int m, n, p, nruns, prt;
+  if (argc == 1) {
+    m = 16;
+    n = 32;
+    p = 1;
+    nruns = 65536;
+    prt = true;
+  } else if (argc == 6) {
+    m = atoi(argv[1]);
+    n = atoi(argv[2]);
+    p = atoi(argv[3]);
+    nruns = atoi(argv[4]);
+    if (atoi(argv[5]) > 0) prt = true;
+    else prt = false;
+  }
+  
   // Array sizes
-  int m = 16;
-  int n = 32;
-  int p = 1;
   int hA = m, wA = n;
   int hB = n, wB = p;
   int hC = m, wC = p;
@@ -112,12 +125,11 @@ int main() {
 
   // Set up timing
   struct timespec start_in, end_in;
-  int num_runs = 65536;
   long dur_in_ns;
   double dur_in = 0.0, dur_in_total = 0.0;
   double dur_in_max = 0.0, dur_in_min = 1e99;
 
-  for (int i = 0; i < num_runs; i++) {
+  for (int i = 0; i < nruns; i++) {
     // Start inclusive timing
     clock_gettime(CLOCK_MONOTONIC, &start_in);
 
@@ -149,15 +161,17 @@ int main() {
   }
 
   // Write result to file
-  FILE *fp;
-  fp = fopen("problem2.out", "w");
-  for (int i = 0; i < hC; i++) {
-    for (int j = 0; j < wC; j++) {
-      fprintf(fp, "%12d ", C[i*wC + j]);
+  if (prt) {
+    FILE *fp;
+    fp = fopen("problem2.out", "w");
+    for (int i = 0; i < hC; i++) {
+      for (int j = 0; j < wC; j++) {
+        fprintf(fp, "%12d ", C[i*wC + j]);
+      }
+      fprintf(fp, "\n");
     }
-    fprintf(fp, "\n");
+    fclose(fp);
   }
-  fclose(fp);
 
   // Free memory
   free(A);
@@ -177,9 +191,9 @@ int main() {
   printf("Dimension 2 (n): %12d\n", n);
   printf("Dimension 3 (p): %12d\n", p);
   printf("Block size:      %12d\n", BLOCK_SIZE);
-  printf("Number of runs:  %12d\n", num_runs);
+  printf("Number of runs:  %12d\n", nruns);
   printf("Inclusive time (maximum): %12.6f ms\n", dur_in_max);
-  printf("Inclusive time (average): %12.6f ms\n", dur_in_total/num_runs);
+  printf("Inclusive time (average): %12.6f ms\n", dur_in_total/nruns);
   printf("Inclusive time (minimum): %12.6f ms\n", dur_in_min);
 
   return 0;
