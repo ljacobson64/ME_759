@@ -38,11 +38,13 @@
 
 #define NUM_ELEMENTS 1024
 
-// **===----------------- Modify this function ---------------------===**
+////////////////////////////////////////////////////////////////////////////////
 //! @param g_idata  input data in global memory
 //                  result is expected in index 0 of g_idata
 //! @param n        input number of elements to scan from input data
-// **===------------------------------------------------------------------===**
-__global__ void reduction(float *g_data, int n) {}
+////////////////////////////////////////////////////////////////////////////////
+__global__ void reduction(float *g_data, int n) {
+  // Placeholder
+}
 
 #endif  // #ifndef _VECTOR_REDUCTION_KERNEL_H_

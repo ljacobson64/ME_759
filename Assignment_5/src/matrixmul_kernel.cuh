@@ -49,7 +49,7 @@
 //! @param g_idata  input data in global memory
 //! @param g_odata  output data in global memory
 ////////////////////////////////////////////////////////////////////////////////
-// Matrix multiplication kernel – thread specification
+// Matrix multiplication kernel thread specification
 __global__ void MatrixMulKernel(const Matrix M, const Matrix N, Matrix P) {}
 
 #endif  // #ifndef _MATRIXMUL_KERNEL_H_

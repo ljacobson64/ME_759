@@ -1,43 +1,43 @@
 /*
-* Copyright 1993-2006 NVIDIA Corporation.  All rights reserved.
-*
-* NOTICE TO USER:
-*
-* This source code is subject to NVIDIA ownership rights under U.S. and
-* international Copyright laws.
-*
-* This software and the information contained herein is PROPRIETARY and
-* CONFIDENTIAL to NVIDIA and is being provided under the terms and
-* conditions of a Non-Disclosure Agreement.  Any reproduction or
-* disclosure to any third party without the express written consent of
-* NVIDIA is prohibited.
-*
-* NVIDIA MAKES NO REPRESENTATION ABOUT THE SUITABILITY OF THIS SOURCE
-* CODE FOR ANY PURPOSE.  IT IS PROVIDED "AS IS" WITHOUT EXPRESS OR
-* IMPLIED WARRANTY OF ANY KIND.  NVIDIA DISCLAIMS ALL WARRANTIES WITH
-* REGARD TO THIS SOURCE CODE, INCLUDING ALL IMPLIED WARRANTIES OF
-* MERCHANTABILITY, NONINFRINGEMENT, AND FITNESS FOR A PARTICULAR PURPOSE.
-* IN NO EVENT SHALL NVIDIA BE LIABLE FOR ANY SPECIAL, INDIRECT, INCIDENTAL,
-* OR CONSEQUENTIAL DAMAGES, OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
-* OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE
-* OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE
-* OR PERFORMANCE OF THIS SOURCE CODE.
-*
-* U.S. Government End Users.  This source code is a "commercial item" as
-* that term is defined at 48 C.F.R. 2.101 (OCT 1995), consisting  of
-* "commercial computer software" and "commercial computer software
-* documentation" as such terms are used in 48 C.F.R. 12.212 (SEPT 1995)
-* and is provided to the U.S. Government only as a commercial end item.
-* Consistent with 48 C.F.R.12.212 and 48 C.F.R. 227.7202-1 through
-* 227.7202-4 (JUNE 1995), all U.S. Government End Users acquire the
-* source code with only those rights set forth herein.
-*/
+ * Copyright 1993-2006 NVIDIA Corporation.  All rights reserved.
+ *
+ * NOTICE TO USER:
+ *
+ * This source code is subject to NVIDIA ownership rights under U.S. and
+ * international Copyright laws.
+ *
+ * This software and the information contained herein is PROPRIETARY and
+ * CONFIDENTIAL to NVIDIA and is being provided under the terms and
+ * conditions of a Non-Disclosure Agreement.  Any reproduction or
+ * disclosure to any third party without the express written consent of
+ * NVIDIA is prohibited.
+ *
+ * NVIDIA MAKES NO REPRESENTATION ABOUT THE SUITABILITY OF THIS SOURCE
+ * CODE FOR ANY PURPOSE.  IT IS PROVIDED "AS IS" WITHOUT EXPRESS OR
+ * IMPLIED WARRANTY OF ANY KIND.  NVIDIA DISCLAIMS ALL WARRANTIES WITH
+ * REGARD TO THIS SOURCE CODE, INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY, NONINFRINGEMENT, AND FITNESS FOR A PARTICULAR PURPOSE.
+ * IN NO EVENT SHALL NVIDIA BE LIABLE FOR ANY SPECIAL, INDIRECT, INCIDENTAL,
+ * OR CONSEQUENTIAL DAMAGES, OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+ * OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE
+ * OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE
+ * OR PERFORMANCE OF THIS SOURCE CODE.
+ *
+ * U.S. Government End Users.  This source code is a "commercial item" as
+ * that term is defined at 48 C.F.R. 2.101 (OCT 1995), consisting  of
+ * "commercial computer software" and "commercial computer software
+ * documentation" as such terms are used in 48 C.F.R. 12.212 (SEPT 1995)
+ * and is provided to the U.S. Government only as a commercial end item.
+ * Consistent with 48 C.F.R.12.212 and 48 C.F.R. 227.7202-1 through
+ * 227.7202-4 (JUNE 1995), all U.S. Government End Users acquire the
+ * source code with only those rights set forth herein.
+ */
 
 /* Matrix multiplication: C = A * B.
-* Host code.
-*/
+ * Host code.
+ */
 
-// includes, system
+// Includes, system
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -45,15 +45,15 @@
 #include <fstream>
 using namespace std;
 
-// includes, kernels
+// Includes, kernels
 #include "matrixmul_kernel.cuh"
 
-// include helper header
+// Include helper header
 #include "tiledMatMult.h"
 
 ////////////////////////////////////////////////////////////////////////////////
-// declarations, forward
-
+// Declarations, forward
+////////////////////////////////////////////////////////////////////////////////
 extern "C" void computeGold(float*, const float*, const float*, unsigned int,
                             unsigned int, unsigned int);
 
@@ -119,16 +119,16 @@ int main(int argc, char** argv) {
 
   // M * N on the device
   MatrixMulOnDevice(M, N, P);
-
   printf("GPU computation complete\n");
-  // compute the matrix multiplication on the CPU for comparison
+
+  // Compute the matrix multiplication on the CPU for comparison
   Matrix reference = AllocateMatrix(P.height, P.width, 0);
   printf("Start CPU computation\n");
   computeGold(reference.elements, M.elements, N.elements, M.height, M.width,
               N.width);
-
   printf("CPU computation complete\n");
-  // in this case check if the result is equivalent to the expected soluion
+
+  // In this case check if the result is equivalent to the expected soluion
   bool res =
       CompareResults(reference.elements, P.elements, P.height * P.width, 0.01f);
   printf("Test %s\n", (1 == res) ? "PASSED" : "FAILED");
@@ -197,8 +197,8 @@ Matrix AllocateDeviceMatrix(const Matrix M) {
 }
 
 // Allocate a device matrix of dimensions height*width
-//	If init == 0, initialize to all zeroes.
-//	If init == 1, perform random initialization.
+//  If init == 0, initialize to all zeroes.
+//  If init == 1, perform random initialization.
 //  If init == 2, initialize matrix parameters, but do not allocate memory
 Matrix AllocateMatrix(int height, int width, int init) {
   Matrix M;
@@ -207,7 +207,7 @@ Matrix AllocateMatrix(int height, int width, int init) {
   int size = M.width * M.height;
   M.elements = NULL;
 
-  // don't allocate memory on option 2
+  // Don't allocate memory on option 2
   if (init == 2) return M;
 
   M.elements = (float*)malloc(size * sizeof(float));
@@ -245,7 +245,7 @@ void FreeMatrix(Matrix* M) {
   M->elements = NULL;
 }
 
-// compare the data stored in two arrays on the host
+// Compare the data stored in two arrays on the host
 bool CompareResults(float* A, float* B, int elements, float eps) {
   for (unsigned int i = 0; i < elements; i++) {
     float error = fabs(A[i] - B[i]);
@@ -268,8 +268,8 @@ bool ReadParams(int* params, int size, char* file_name) {
 }
 
 // Read a floating point matrix in from file
-// Returns zero if the number of elements read is
-//  equals M.height * M.width, and 1 otherwise
+// Returns 0 if the number of elements read equals M.height * M.width,
+// and 1 otherwise
 int ReadFile(Matrix* M, char* file_name) {
   unsigned int data_read = M->height * M->width;
   std::ifstream ifile(file_name);
@@ -304,7 +304,7 @@ Matrix PaddedMatrix(const Matrix& M, const int BLKSZ, int copyEntries) {
   Mpadded.elements =
       (float*)calloc(Mpadded.width * Mpadded.height, sizeof(float));
 
-  // copy entries of original matrix only if asked to
+  // Copy entries of original matrix only if asked to
   if (copyEntries) {
     for (int i = 0; i < M.height; i++) {
       memcpy(&Mpadded.elements[i * Mpadded.width], &M.elements[i * M.width],
