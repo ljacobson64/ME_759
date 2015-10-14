@@ -44,18 +44,16 @@
 #include <math.h>
 #include <float.h>
 
-// Includes, project
-#include <cutil.h>
-
-// Includes, kernels
+// Includes
 #include "vector_reduction_kernel.cu"
+#include "vector_reduction_gold.cpp"
 
 ////////////////////////////////////////////////////////////////////////////////
 // Declaration, forward
 ////////////////////////////////////////////////////////////////////////////////
 void runTest(int argc, char** argv);
-
 int ReadFile(float*, char* file_name);
+
 float computeOnDevice(float* h_data, int array_mem_size);
 
 extern "C" void computeGold(float* reference, float* idata,
@@ -120,11 +118,12 @@ void runTest(int argc, char** argv) {
 }
 
 int ReadFile(float* M, char* file_name) {
-  unsigned int elements_read = NUM_ELEMENTS;
-  if (cutReadFilef(file_name, &M, &elements_read, true))
-    return 1;
-  else
-    return 0;
+  //unsigned int elements_read = NUM_ELEMENTS;
+  //if (cutReadFilef(file_name, &M, &elements_read, true))
+  //  return 1;
+  //else
+  //  return 0;
+  return 0;
 }
 
 // Take h_data from host, copies it to device, setup grid and thread dimensions,

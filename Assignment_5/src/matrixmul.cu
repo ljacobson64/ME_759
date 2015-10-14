@@ -45,18 +45,14 @@
 #include <fstream>
 using namespace std;
 
-// Includes, kernels
-#include "matrixmul_kernel.cuh"
-
-// Include helper header
+// Includes
 #include "tiledMatMult.h"
+#include "matrixmul_kernel.cuh"
+#include "matrixmul_gold.cpp"
 
 ////////////////////////////////////////////////////////////////////////////////
 // Declarations, forward
 ////////////////////////////////////////////////////////////////////////////////
-extern "C" void computeGold(float*, const float*, const float*, unsigned int,
-                            unsigned int, unsigned int);
-
 Matrix AllocateDeviceMatrix(const Matrix M);
 Matrix AllocateMatrix(int height, int width, int init);
 Matrix PaddedMatrix(const Matrix& M, const int BLKSZ, int copyEntries);
@@ -72,7 +68,11 @@ void FreeMatrix(Matrix* M);
 
 void MatrixMulOnDevice(const Matrix M, const Matrix N, Matrix P);
 
+extern "C" void computeGold(float*, const float*, const float*, unsigned int,
+                            unsigned int, unsigned int);
+
 #define MAT_MAX_SIZE 4096
+
 ////////////////////////////////////////////////////////////////////////////////
 // Program main
 ////////////////////////////////////////////////////////////////////////////////
