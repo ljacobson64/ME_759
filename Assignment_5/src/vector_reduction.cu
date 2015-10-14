@@ -49,12 +49,12 @@
 #include "vector_reduction_gold.cpp"
 
 ////////////////////////////////////////////////////////////////////////////////
-// Declaration, forward
+// Declarations, forward
 ////////////////////////////////////////////////////////////////////////////////
-void runTest(int argc, char** argv);
-int ReadFile(float*, char* file_name);
-
-float computeOnDevice(float* h_data, int array_mem_size);
+int runTest(int argc, char** argv);
+int ReadFile(float* M, char* file_name);
+float computeOnDevice(float* h_data, int num_elements, int block_size);
+int int_power(int x, int n);
 
 extern "C" void computeGold(float* reference, float* idata,
                             const unsigned int len);
@@ -64,14 +64,27 @@ extern "C" void computeGold(float* reference, float* idata,
 ////////////////////////////////////////////////////////////////////////////////
 int main(int argc, char** argv) {
   runTest(argc, argv);
-  return EXIT_SUCCESS;
+  return 0;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Run test
 ////////////////////////////////////////////////////////////////////////////////
-void runTest(int argc, char** argv) {
-  int num_elements = NUM_ELEMENTS;
+int runTest(int argc, char** argv) {
+  int num_elements, block_size;
+  if (argc == 3) {
+    num_elements = int_power(2, atoi(argv[1]));
+    if (atoi(argv[2]) <= 10) {
+      block_size = int_power(2, atoi(argv[2]));
+    } else {
+      printf("Maximum block size: 1024\n");
+      return 1;
+    }
+  } else {
+    num_elements = 1024;
+    block_size = 256;
+  }
+
   int errorM = 0;
 
   const unsigned int array_mem_size = sizeof(float) * num_elements;
@@ -92,44 +105,92 @@ void runTest(int argc, char** argv) {
       break;
 
     default:  // No Arguments or one argument
-      // initialize the input data on the host to be integer values between 0
+      // Initialize the input data on the host to be integer values between 0
       // and 1000
       for (unsigned int i = 0; i < num_elements; ++i) {
         h_data[i] = floorf(1000 * (rand() / (float)RAND_MAX));
       }
       break;
   }
-  
+
   // Compute reference solution
   float reference = 0.0f;
   computeGold(&reference, h_data, num_elements);
 
   // Compute solution on GPU
-  float result = computeOnDevice(h_data, num_elements);
+  float result = computeOnDevice(h_data, num_elements, block_size);
 
   // Run accuracy test
   float epsilon = 0.0001f;
   unsigned int result_regtest = (abs(result - reference) <= epsilon);
   printf("Test %s\n", (1 == result_regtest) ? "PASSED" : "FAILED");
-  printf("device: %f  host: %f\n", result, reference);
+  printf("num_elements: %d\n", num_elements);
+  printf("block_size:   %d\n", block_size);
+  printf("GPU result:   %f\n", result);
+  printf("CPU result:   %f\n", reference);
 
   // Cleanup memory
   free(h_data);
+
+  return 0;
 }
 
 int ReadFile(float* M, char* file_name) {
-  //unsigned int elements_read = NUM_ELEMENTS;
-  //if (cutReadFilef(file_name, &M, &elements_read, true))
-  //  return 1;
-  //else
-  //  return 0;
+  // unsigned int elements_read = NUM_ELEMENTS;
+  // if (cutReadFilef(file_name, &M, &elements_read, true))
+  //   return 1;
+  // else
+  //   return 0;
   return 0;
 }
 
 // Take h_data from host, copies it to device, setup grid and thread dimensions,
 // excutes kernel function, and copy result of scan back to h_data.
 // Note: float* h_data is both the input and the output of this function.
-float computeOnDevice(float* h_data, int num_elements) {
-  // Placeholder
-  return 0.0f;
+float computeOnDevice(float* h_data, int num_elements, int block_size) {
+  int num_blocks = num_elements / block_size;
+
+  // Allocate device array
+  float* g0_data, *g1_data, *g2_data;
+  cudaMalloc(&g0_data, sizeof(float) * num_elements);
+  cudaMalloc(&g1_data, sizeof(float) * num_blocks);
+  cudaMalloc(&g2_data, sizeof(float));
+
+  // Copy host array to device
+  cudaMemcpy(g0_data, h_data, sizeof(float) * num_elements,
+             cudaMemcpyHostToDevice);
+
+  // Execute device kernel
+  reduce0 <<<num_blocks, block_size, sizeof(float) * block_size>>>
+      (g0_data, g1_data, num_elements);
+  reduce0 <<<1, num_blocks, sizeof(float) * num_blocks>>>
+      (g1_data, g2_data, num_blocks);
+
+  // Copy the result array back to the host
+  float* result = (float*)malloc(sizeof(float));
+  cudaMemcpy(result, g2_data, sizeof(float), cudaMemcpyDeviceToHost);
+
+  // Cleanup memory
+  cudaFree(g0_data);
+  cudaFree(g1_data);
+  cudaFree(g2_data);
+
+  return *result;
+}
+
+// Take integer power
+int int_power(int x, int n) {
+  if (n <= 0) return 1;
+  int y = 1;
+  while (n > 1) {
+    if (n % 2 == 0) {
+      x *= x;
+      n /= 2;
+    } else {
+      y *= x;
+      x *= x;
+      n = (n - 1) / 2;
+    }
+  }
+  return x * y;
 }
