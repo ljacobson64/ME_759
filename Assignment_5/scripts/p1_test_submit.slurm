@@ -9,6 +9,6 @@
 #SBATCH --output=/home/jacobson/p1_%J.out
 #SBATCH --error=/home/jacobson/p1_%J.err
 
-for i in $(seq -f "%g" 6 21); do
+for i in $(seq -f "%g" 4 20); do
   ../bld/p1 $i 10
 done

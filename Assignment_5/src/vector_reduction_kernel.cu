@@ -41,30 +41,31 @@
 //! @param go_data  output data in global memory
 //! @param n        input number of elements to scan from input data
 ////////////////////////////////////////////////////////////////////////////////
-//__global__ void reduction(float *gi_data, float *go_data, int n) {
-//  // Placeholder
-//}
+__global__ void reduction(float *gi_data, float *go_data, int n) {
+	// Setup shared memory
+  extern __shared__ float s_data[];
 
-__global__ void reduce0(float *gi_data, float *go_data, int n) {
-  extern __shared__ float sdata[];
-
-  // each thread loads one element from global to shared mem
-  unsigned int tid = threadIdx.x;
-  unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
-  sdata[tid] = gi_data[i];
+  // Load global memory into shared memory
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  s_data[threadIdx.x] = gi_data[i];
+  
+  // Make sure all the memory in a block is loaded before continuing
   __syncthreads();
 
-	// do reduction in shared mem
-	for(unsigned int s=1; s < blockDim.x; s *= 2) {
-		if (tid % (2 * s) == 0) {
-		  sdata[tid] += sdata[tid + s];
+	// Add the first and second halves of the array and place the result in the
+	// first half. Then add the first and second halves of the original first
+	// half, and repeat until the final block sum is computed. The total number of
+	// loops is equal to log_2(blockDim.x) - 1.
+	for (int s = blockDim.x / 2; s > 0; s >>= 1) {
+		if (threadIdx.x < s) {
+			s_data[threadIdx.x] += s_data[threadIdx.x + s];
 		}
-	  __syncthreads();
-  }
+		__syncthreads();
+	}
 
-  // write result for this block to global mem
-  if (tid == 0) {
-	  go_data[blockIdx.x] = sdata[0];
+  // Write the result for each block into go_data
+  if (threadIdx.x == 0) {
+	  go_data[blockIdx.x] = s_data[0];
   }
 }
 

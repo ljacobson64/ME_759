@@ -75,6 +75,9 @@ int runTest(int argc, char** argv) {
   if (argc == 3) {
     num_elements = int_power(2, atoi(argv[1]));
     block_size = int_power(2, atoi(argv[2]));
+		if (block_size > num_elements) {
+			block_size = num_elements;
+		}
   } else {
     num_elements = 1024;
     block_size = 1024;
@@ -158,9 +161,9 @@ float computeOnDevice(float* h_data, int num_elements, int block_size) {
              cudaMemcpyHostToDevice);
 
   // Execute device kernel
-  reduce0 <<<num_blocks, block_size, sizeof(float) * block_size>>>
+  reduction <<<num_blocks, block_size, sizeof(float) * block_size>>>
       (g0_data, g1_data, num_elements);
-  reduce0 <<<1, num_blocks, sizeof(float) * num_blocks>>>
+  reduction <<<1, num_blocks, sizeof(float) * num_blocks>>>
       (g1_data, g2_data, num_blocks);
 
   // Copy the result array back to the host
