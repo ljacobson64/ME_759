@@ -87,12 +87,13 @@ int main(int argc, char** argv) {
   if (argc != 5 && argc != 4) {
     // Allocate and initialize the matrices
     int dummy;
-    dummy = rand() % MAT_MAX_SIZE;
+    dummy = 512;
+    // dummy = rand() % MAT_MAX_SIZE;
     int Mh = (dummy == 0 ? 1 : dummy);
-    dummy = rand() % MAT_MAX_SIZE;
+    // dummy = rand() % MAT_MAX_SIZE;
     int Mw = (dummy == 0 ? 1 : dummy);
     M = AllocateMatrix(Mh, Mw, 1);
-    dummy = rand() % MAT_MAX_SIZE;
+    // dummy = rand() % MAT_MAX_SIZE;
     int Nw = (dummy == 0 ? 1 : dummy);
     N = AllocateMatrix(Mw, Nw, 1);
     P = AllocateMatrix(Mh, Nw, 0);
@@ -169,9 +170,12 @@ void MatrixMulOnDevice(const Matrix Munpadded, const Matrix Nunpadded,
   CopyToDeviceMatrix(Pd, Punpadded);  // Clear memory
 
   // Setup the execution configuration
-  // Come up with the number of blocks you need to call
+  dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
+  dim3 dimGrid((P.width + BLOCK_SIZE - 1) / dimBlock.x,
+               (P.height + BLOCK_SIZE - 1) / dimBlock.y);
 
   // Launch the device computation threads
+  MatrixMulKernel << <dimGrid, dimBlock>>> (Md, Nd, Pd);
 
   // Read P from the device and then extract the submatrix with the result
   CopyFromDeviceMatrix(P, Pd);

@@ -50,6 +50,39 @@
 //! @param g_odata  output data in global memory
 ////////////////////////////////////////////////////////////////////////////////
 // Matrix multiplication kernel thread specification
-__global__ void MatrixMulKernel(const Matrix M, const Matrix N, Matrix P) {}
+__global__ void MatrixMulKernel(const Matrix M, const Matrix N, Matrix P) {
+  // Thread and block indices
+  unsigned int tx = threadIdx.x;
+  unsigned int ty = threadIdx.y;
+  unsigned int bx = blockIdx.x;
+  unsigned int by = blockIdx.y;
+
+  // Initialize subarrays in shared memory
+  __shared__ int sM[BLOCK_SIZE][BLOCK_SIZE];
+  __shared__ int sN[BLOCK_SIZE][BLOCK_SIZE];
+
+  // Loop over each subarray
+  double result = 0;
+  for (unsigned int r = 0; r < M.width / BLOCK_SIZE; r++) {
+    // Fill the subarrays in shared memory
+    sM[ty][tx] =
+        M.elements[(by * BLOCK_SIZE + ty) * M.width + (r * BLOCK_SIZE + tx)];
+    sN[ty][tx] =
+        N.elements[(r * BLOCK_SIZE + ty) * N.width + (bx * BLOCK_SIZE + tx)];
+
+    __syncthreads();
+
+    // Sum the contributions from each thread in the subarray
+    for (unsigned int s = 0; s < BLOCK_SIZE; s++) {
+      result += sM[ty][s] * sN[s][tx];
+    }
+
+    __syncthreads();
+  }
+
+  // Fill result array
+  P.elements[(by * BLOCK_SIZE + ty) * N.width + (bx * BLOCK_SIZE + tx)] =
+      (float)result;
+}
 
 #endif  // #ifndef _MATRIXMUL_KERNEL_H_
