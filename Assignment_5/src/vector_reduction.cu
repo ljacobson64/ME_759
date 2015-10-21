@@ -117,7 +117,7 @@ int runTest(int argc, char** argv) {
 
   // Run accuracy test
   float epsilon = 0.0001f;
-  unsigned int result_regtest = (abs(result - reference) <= epsilon);
+  unsigned int result_regtest = (abs(result / reference - 1.f) <= epsilon);
   printf("Test %s\n", (1 == result_regtest) ? "PASSED" : "FAILED");
   printf("num_elements: %d\n", num_elements);
   printf("block_size:   %d\n", block_size);
@@ -144,50 +144,33 @@ int ReadFile(float* M, char* file_name) {
 // Take h_data from host, copies it to device, setup grid and thread dimensions,
 // excutes kernel function, and copy result of scan back to h_data.
 // Note: float* h_data is both the input and the output of this function.
-float computeOnDevice(float* h_data, int num_elements, int block_base) {
-  int sf = sizeof(float);
+float computeOnDevice(float* h_data, int num_elements, int block_size) {
+  int num_blocks = num_elements / block_size;
 
-  // Calculate number of required kernel calls
-  int depth = 1;
-  while (num_elements > int_power(block_base, depth)) {
-    depth++;
-  }
-
-  // Calculate array and block sizes
-  int vec_size[depth + 1];
-  int block_size[depth + 1];
-  vec_size[0] = num_elements;
-  for (int i = 0; i < depth; i++) {
-    if (vec_size[i] > block_base) block_size[i] = block_base;
-    else block_size[i] = vec_size[i];
-    vec_size[i + 1] = vec_size[i] / block_size[i];
-  }
-  block_size[depth] = 1;
-  
-  // Allocate device arrays
-  float *g_data[depth + 1];
-  for (int i = 0; i < depth + 1; i++) {
-    cudaMalloc(&g_data[i], sf * vec_size[i]);
-  }
+  // Allocate device array
+  float* g0_data, *g1_data, *g2_data;
+  cudaMalloc(&g0_data, sizeof(float) * num_elements);
+  cudaMalloc(&g1_data, sizeof(float) * num_blocks);
+  cudaMalloc(&g2_data, sizeof(float));
 
   // Copy host array to device
-  cudaMemcpy(g_data[0], h_data, vec_size[0], cudaMemcpyHostToDevice);
+  cudaMemcpy(g0_data, h_data, sizeof(float) * num_elements,
+             cudaMemcpyHostToDevice);
 
   // Execute device kernel
-  //cudaFuncSetCacheConfig(reduce0, cudaFuncCachePreferShared);
-  for (int i = 0; i < depth; i++) {
-    reduce0 <<<vec_size[i + 1], block_size[i], sf * block_size[i]>>>
-        (g_data[i], g_data[i + 1], vec_size[i]);
-  }
+  reduce0 <<<num_blocks, block_size, sizeof(float) * block_size>>>
+      (g0_data, g1_data, num_elements);
+  reduce0 <<<1, num_blocks, sizeof(float) * num_blocks>>>
+      (g1_data, g2_data, num_blocks);
 
-  // Copy the result back to the host
-  float* result = (float*)malloc(sf);
-  cudaMemcpy(result, g_data[depth], sf, cudaMemcpyDeviceToHost);
+  // Copy the result array back to the host
+  float* result = (float*)malloc(sizeof(float));
+  cudaMemcpy(result, g2_data, sizeof(float), cudaMemcpyDeviceToHost);
 
   // Cleanup memory
-  for (int i = 0; i < depth + 1; i++) {
-    cudaFree(g_data[i]);
-  }
+  cudaFree(g0_data);
+  cudaFree(g1_data);
+  cudaFree(g2_data);
 
   return *result;
 }

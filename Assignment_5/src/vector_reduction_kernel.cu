@@ -47,21 +47,25 @@
 
 __global__ void reduce0(float *gi_data, float *go_data, int n) {
   extern __shared__ float sdata[];
+
   // each thread loads one element from global to shared mem
   unsigned int tid = threadIdx.x;
   unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
   sdata[tid] = gi_data[i];
   __syncthreads();
-  // do reduction in shared mem
-  for (unsigned int s = 1; s < blockDim.x; s *= 2) {
-    int index = 2 * s * tid;
-    if (index < blockDim.x) {
-      sdata[index] += sdata[index + s];
-    }
-    __syncthreads();
+
+	// do reduction in shared mem
+	for(unsigned int s=1; s < blockDim.x; s *= 2) {
+		if (tid % (2 * s) == 0) {
+		  sdata[tid] += sdata[tid + s];
+		}
+	  __syncthreads();
   }
+
   // write result for this block to global mem
-  if (tid == 0) go_data[blockIdx.x] = sdata[0];
+  if (tid == 0) {
+	  go_data[blockIdx.x] = sdata[0];
+  }
 }
 
 #endif  // #ifndef _VECTOR_REDUCTION_KERNEL_H_
