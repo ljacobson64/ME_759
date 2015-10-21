@@ -58,8 +58,8 @@ __global__ void MatrixMulKernel(const Matrix M, const Matrix N, Matrix P) {
   unsigned int by = blockIdx.y;
 
   // Initialize subarrays in shared memory
-  __shared__ int sM[BLOCK_SIZE][BLOCK_SIZE];
-  __shared__ int sN[BLOCK_SIZE][BLOCK_SIZE];
+  __shared__ float sM[BLOCK_SIZE][BLOCK_SIZE];
+  __shared__ float sN[BLOCK_SIZE][BLOCK_SIZE];
 
   // Loop over each subarray
   double result = 0;

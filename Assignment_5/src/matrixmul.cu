@@ -65,13 +65,14 @@ bool ReadParams(int* params, int size, char* file_name);
 void WriteFile(Matrix M, char* file_name);
 void FreeDeviceMatrix(Matrix* M);
 void FreeMatrix(Matrix* M);
+void PrintMatrix(Matrix M);
 
 void MatrixMulOnDevice(const Matrix M, const Matrix N, Matrix P);
 
 extern "C" void computeGold(float*, const float*, const float*, unsigned int,
                             unsigned int, unsigned int);
 
-#define MAT_MAX_SIZE 4096
+#define MAT_MAX_SIZE 11360  // Max size that works on Euler
 
 ////////////////////////////////////////////////////////////////////////////////
 // Program main
@@ -87,13 +88,12 @@ int main(int argc, char** argv) {
   if (argc != 5 && argc != 4) {
     // Allocate and initialize the matrices
     int dummy;
-    dummy = 512;
-    // dummy = rand() % MAT_MAX_SIZE;
+    dummy = rand() % MAT_MAX_SIZE;
     int Mh = (dummy == 0 ? 1 : dummy);
-    // dummy = rand() % MAT_MAX_SIZE;
+    dummy = rand() % MAT_MAX_SIZE;
     int Mw = (dummy == 0 ? 1 : dummy);
     M = AllocateMatrix(Mh, Mw, 1);
-    // dummy = rand() % MAT_MAX_SIZE;
+    dummy = rand() % MAT_MAX_SIZE;
     int Nw = (dummy == 0 ? 1 : dummy);
     N = AllocateMatrix(Mw, Nw, 1);
     P = AllocateMatrix(Mh, Nw, 0);
@@ -118,23 +118,36 @@ int main(int argc, char** argv) {
     }
   }
 
+  printf("Dimension M[height,width]: %d  %d\n", M.height, M.width);
+  printf("Dimension N[height,width]: %d  %d\n", N.height, N.width);
+
   // M * N on the device
   MatrixMulOnDevice(M, N, P);
-  printf("GPU computation complete\n");
+
+  /*
+  // Setup CPU timing
+  float dur_cpu;
+  cudaEvent_t start_cpu, end_cpu;
+  cudaEventCreate(&start_cpu);
+  cudaEventCreate(&end_cpu);
 
   // Compute the matrix multiplication on the CPU for comparison
   Matrix reference = AllocateMatrix(P.height, P.width, 0);
-  printf("Start CPU computation\n");
+  cudaEventRecord(start_cpu, 0);
   computeGold(reference.elements, M.elements, N.elements, M.height, M.width,
               N.width);
-  printf("CPU computation complete\n");
+  cudaEventRecord(end_cpu, 0);
+  cudaEventSynchronize(end_cpu);
+
+  // Calculate duration
+  cudaEventElapsedTime(&dur_cpu, start_cpu, end_cpu);
+  printf("CPU execution time:             %15.6f ms\n", dur_cpu);
 
   // In this case check if the result is equivalent to the expected soluion
   bool res =
       CompareResults(reference.elements, P.elements, P.height * P.width, 0.01f);
   printf("Test %s\n", (1 == res) ? "PASSED" : "FAILED");
-  printf("Dimension M[height,width]: %d  %d\n", M.height, M.width);
-  printf("Dimension N[height,width]: %d  %d\n", N.height, N.width);
+  */
 
   if (argc == 5) {
     WriteFile(P, argv[4]);
@@ -154,32 +167,62 @@ int main(int argc, char** argv) {
 ////////////////////////////////////////////////////////////////////////////////
 void MatrixMulOnDevice(const Matrix Munpadded, const Matrix Nunpadded,
                        Matrix Punpadded) {
+  // Setup timing
+  float dur_ex, dur_in;
+  cudaEvent_t start_ex, end_ex, start_in, end_in;
+  cudaEventCreate(&start_ex);
+  cudaEventCreate(&end_ex);
+  cudaEventCreate(&start_in);
+  cudaEventCreate(&end_in);
+
   // I'm going to take care of the padding here...
   Matrix M = PaddedMatrix(Munpadded, BLOCK_SIZE, 1);
   Matrix N = PaddedMatrix(Nunpadded, BLOCK_SIZE, 1);
   Matrix P = PaddedMatrix(Punpadded, BLOCK_SIZE, 0);
 
-  // Load M and N to the device
+  // Allocate device matrices
   Matrix Md = AllocateDeviceMatrix(M);
-  CopyToDeviceMatrix(Md, M);
   Matrix Nd = AllocateDeviceMatrix(N);
-  CopyToDeviceMatrix(Nd, N);
-
-  // Allocate P on the device
   Matrix Pd = AllocateDeviceMatrix(P);
-  CopyToDeviceMatrix(Pd, Punpadded);  // Clear memory
 
   // Setup the execution configuration
   dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
-  dim3 dimGrid((P.width + BLOCK_SIZE - 1) / dimBlock.x,
-               (P.height + BLOCK_SIZE - 1) / dimBlock.y);
+  dim3 dimGrid((P.width + BLOCK_SIZE - 1) / BLOCK_SIZE,
+               (P.height + BLOCK_SIZE - 1) / BLOCK_SIZE);
+
+  // Start inclusive timing
+  cudaEventRecord(start_in, 0);
+
+  // Load M and N to the device
+  CopyToDeviceMatrix(Md, M);
+  CopyToDeviceMatrix(Nd, N);
+  // CopyToDeviceMatrix(Pd, P);
+
+  // Start exclusive timing
+  cudaEventRecord(start_ex, 0);
 
   // Launch the device computation threads
   MatrixMulKernel << <dimGrid, dimBlock>>> (Md, Nd, Pd);
 
-  // Read P from the device and then extract the submatrix with the result
+  // End exclusive timing
+  cudaEventRecord(end_ex, 0);
+  cudaEventSynchronize(end_ex);
+
+  // Read P from the device
   CopyFromDeviceMatrix(P, Pd);
+
+  // End inclusive timing
+  cudaEventRecord(end_in, 0);
+  cudaEventSynchronize(end_in);
+
+  // Extract the submatrix with the result
   ExtractFromPadded(Punpadded, P);
+
+  // Calculate durations
+  cudaEventElapsedTime(&dur_ex, start_ex, end_ex);
+  cudaEventElapsedTime(&dur_in, start_in, end_in);
+  printf("GPU execution time (exclusive): %15.6f ms\n", dur_ex);
+  printf("GPU execution time (inclusive): %15.6f ms\n", dur_in);
 
   // Free device matrices
   FreeDeviceMatrix(&Md);
@@ -339,4 +382,15 @@ void ExtractFromPadded(Matrix M, const Matrix& Mpadded) {
   }
 
   return;
+}
+
+// Print the contents of a matrix to stdout
+void PrintMatrix(Matrix M) {
+  for (unsigned int i = 0; i < M.height; i++) {
+    for (unsigned int j = 0; j < M.width; j++) {
+      printf("%7.4f ", M.elements[i * M.width + j]);
+    }
+    printf("\n");
+  }
+  printf("\n");
 }
