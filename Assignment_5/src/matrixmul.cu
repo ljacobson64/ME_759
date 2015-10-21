@@ -72,32 +72,38 @@ void MatrixMulOnDevice(const Matrix M, const Matrix N, Matrix P);
 extern "C" void computeGold(float*, const float*, const float*, unsigned int,
                             unsigned int, unsigned int);
 
-#define MAT_MAX_SIZE 11360  // Max size that works on Euler
+#define MAT_MAX_SIZE 1024  // Max size that works on Euler is 11360,
+                           // but this takes forever on the CPU
 
 ////////////////////////////////////////////////////////////////////////////////
 // Program main
 ////////////////////////////////////////////////////////////////////////////////
 int main(int argc, char** argv) {
-  Matrix M;
-  Matrix N;
-  Matrix P;
+  Matrix M, N, P;
   int errorM = 0, errorN = 0;
+  bool compare = true;
 
   srand(52);
 
-  if (argc != 5 && argc != 4) {
+  if (argc == 1 || argc == 2) {
     // Allocate and initialize the matrices
     int dummy;
     dummy = rand() % MAT_MAX_SIZE;
     int Mh = (dummy == 0 ? 1 : dummy);
     dummy = rand() % MAT_MAX_SIZE;
     int Mw = (dummy == 0 ? 1 : dummy);
-    M = AllocateMatrix(Mh, Mw, 1);
     dummy = rand() % MAT_MAX_SIZE;
     int Nw = (dummy == 0 ? 1 : dummy);
-    N = AllocateMatrix(Mw, Nw, 1);
-    P = AllocateMatrix(Mh, Nw, 0);
-  } else {
+    M = AllocateMatrix(Mh, Mw, 0);
+    N = AllocateMatrix(Mw, Nw, 0);
+    P = AllocateMatrix(Mh, Nw, 1);
+  } else if (argc == 3) {
+    if (atoi(argv[1]) == 0) compare = false;
+    int siz = atoi(argv[2]);
+    M = AllocateMatrix(siz, siz, 0);
+    N = AllocateMatrix(siz, siz, 0);
+    P = AllocateMatrix(siz, siz, 1);
+  } else if (argc == 4 || argc == 5) {
     // Allocate and read in matrices from disk
     int* params = (int*)malloc(3 * sizeof(int));
     unsigned int data_read = 3;
@@ -109,7 +115,7 @@ int main(int argc, char** argv) {
 
     M = AllocateMatrix(params[0], params[1], 0);
     N = AllocateMatrix(params[1], params[2], 0);
-    P = AllocateMatrix(params[0], params[2], 0);
+    P = AllocateMatrix(params[0], params[2], 1);
     errorM = ReadFile(&M, argv[2]);
     errorN = ReadFile(&N, argv[3]);
     if (errorM || errorN) {
@@ -124,30 +130,34 @@ int main(int argc, char** argv) {
   // M * N on the device
   MatrixMulOnDevice(M, N, P);
 
-  /*
-  // Setup CPU timing
-  float dur_cpu;
-  cudaEvent_t start_cpu, end_cpu;
-  cudaEventCreate(&start_cpu);
-  cudaEventCreate(&end_cpu);
+  if (compare) {
+    // Setup CPU timing
+    float dur_cpu;
+    cudaEvent_t start_cpu, end_cpu;
+    cudaEventCreate(&start_cpu);
+    cudaEventCreate(&end_cpu);
 
-  // Compute the matrix multiplication on the CPU for comparison
-  Matrix reference = AllocateMatrix(P.height, P.width, 0);
-  cudaEventRecord(start_cpu, 0);
-  computeGold(reference.elements, M.elements, N.elements, M.height, M.width,
-              N.width);
-  cudaEventRecord(end_cpu, 0);
-  cudaEventSynchronize(end_cpu);
+    // Compute the matrix multiplication on the CPU for comparison
+    Matrix reference = AllocateMatrix(P.height, P.width, 0);
+    cudaEventRecord(start_cpu, 0);
+    computeGold(reference.elements, M.elements, N.elements, M.height, M.width,
+                N.width);
+    cudaEventRecord(end_cpu, 0);
+    cudaEventSynchronize(end_cpu);
 
-  // Calculate duration
-  cudaEventElapsedTime(&dur_cpu, start_cpu, end_cpu);
-  printf("CPU execution time:             %15.6f ms\n", dur_cpu);
+    // Calculate duration
+    cudaEventElapsedTime(&dur_cpu, start_cpu, end_cpu);
+    printf("CPU execution time:             %15.6f ms\n", dur_cpu);
+    cudaEventDestroy(start_cpu);
+    cudaEventDestroy(end_cpu);
 
-  // In this case check if the result is equivalent to the expected soluion
-  bool res =
-      CompareResults(reference.elements, P.elements, P.height * P.width, 0.01f);
-  printf("Test %s\n", (1 == res) ? "PASSED" : "FAILED");
-  */
+    // In this case check if the result is equivalent to the expected soluion
+    bool res = CompareResults(reference.elements, P.elements,
+                              P.height * P.width, 0.01f);
+    printf("Test %s\n", (1 == res) ? "PASSED" : "FAILED");
+  }
+
+  printf("\n");
 
   if (argc == 5) {
     WriteFile(P, argv[4]);
@@ -202,7 +212,7 @@ void MatrixMulOnDevice(const Matrix Munpadded, const Matrix Nunpadded,
   cudaEventRecord(start_ex, 0);
 
   // Launch the device computation threads
-  MatrixMulKernel << <dimGrid, dimBlock>>> (Md, Nd, Pd);
+  MatrixMulKernel <<<dimGrid, dimBlock>>> (Md, Nd, Pd);
 
   // End exclusive timing
   cudaEventRecord(end_ex, 0);
@@ -223,6 +233,10 @@ void MatrixMulOnDevice(const Matrix Munpadded, const Matrix Nunpadded,
   cudaEventElapsedTime(&dur_in, start_in, end_in);
   printf("GPU execution time (exclusive): %15.6f ms\n", dur_ex);
   printf("GPU execution time (inclusive): %15.6f ms\n", dur_in);
+  cudaEventDestroy(start_ex);
+  cudaEventDestroy(end_ex);
+  cudaEventDestroy(start_in);
+  cudaEventDestroy(end_in);
 
   // Free device matrices
   FreeDeviceMatrix(&Md);
@@ -258,6 +272,9 @@ Matrix AllocateMatrix(int height, int width, int init) {
   if (init == 2) return M;
 
   M.elements = (float*)malloc(size * sizeof(float));
+
+  // Don't fill with random numbers on option 1
+  if (init == 1) return M;
 
   for (unsigned int i = 0; i < M.height * M.width; i++) {
     M.elements[i] = (init == 0) ? (0.0f) : (rand() * 3 / (float)RAND_MAX);

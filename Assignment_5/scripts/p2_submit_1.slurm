@@ -9,4 +9,5 @@
 #SBATCH --output=/home/jacobson/p2_%J.out
 #SBATCH --error=/home/jacobson/p2_%J.err
 
-../bld/p2
+export CUDA_PROFILE=1
+../bld/p2 0 4096
