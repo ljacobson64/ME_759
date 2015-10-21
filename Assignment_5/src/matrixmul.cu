@@ -72,7 +72,7 @@ void MatrixMulOnDevice(const Matrix M, const Matrix N, Matrix P);
 extern "C" void computeGold(float*, const float*, const float*, unsigned int,
                             unsigned int, unsigned int);
 
-#define MAT_MAX_SIZE 1024  // Max size that works on Euler is 11360,
+#define MAT_MAX_SIZE 4096  // Max size that works on Euler is 11360,
                            // but this takes forever on the CPU
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -211,7 +211,7 @@ void MatrixMulOnDevice(const Matrix Munpadded, const Matrix Nunpadded,
   cudaEventRecord(start_ex, 0);
 
   // Launch the device computation threads
-  MatrixMulKernel <<<dimGrid, dimBlock>>> (Md, Nd, Pd);
+  MatrixMulKernel << <dimGrid, dimBlock>>> (Md, Nd, Pd);
 
   // End exclusive timing
   cudaEventRecord(end_ex, 0);

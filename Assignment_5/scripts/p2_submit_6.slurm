@@ -9,7 +9,9 @@
 #SBATCH --output=/home/jacobson/p2_%J.out
 #SBATCH --error=/home/jacobson/p2_%J.err
 
-export CUDA_PROFILE=1
-../bld/p2
-cat cuda_profile_0.log
-rm -f cuda_profile_0.log
+for i in $(seq -f "%2g" 4 11); do
+  ../bld/p2 1 $((2**$i))
+done
+../bld p2 0 4096
+../bld p2 0 8192
+../bld p2 0 11360

@@ -16,7 +16,8 @@
  * CODE FOR ANY PURPOSE.  IT IS PROVIDED "AS IS" WITHOUT EXPRESS OR
  * IMPLIED WARRANthreadIdx.y OF ANY KIND.  NVIDIA DISCLAIMS ALL WARRANTIES WITH
  * REGARD TO THIS SOURCE CODE, INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILIthreadIdx.y, NONINFRINGEMENT, AND FITNESS FOR A PARTICULAR PURPOSE.
+ * MERCHANTABILIthreadIdx.y, NONINFRINGEMENT, AND FITNESS FOR A PARTICULAR
+ *PURPOSE.
  * IN NO EVENT SHALL NVIDIA BE LIABLE FOR ANY SPECIAL, INDIRECT, INCIDENTAL,
  * OR CONSEQUENTIAL DAMAGES, OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
  * OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE
@@ -60,11 +61,14 @@ __global__ void MatrixMulKernel(const Matrix M, const Matrix N, Matrix P) {
   __shared__ float sN[BLOCK_SIZE][BLOCK_SIZE];
 
   // Loop over each subarray
-  float result = 0.f;
+  float result = 0.f;  // This should probably be a double but the tests
+                       // still pass if it's a float
   for (unsigned short r = 0; r < M.width / BLOCK_SIZE; r++) {
     // Fill the subarrays in shared memory
-    sM[threadIdx.y][threadIdx.x] = M.elements[col * M.width + (r * BLOCK_SIZE + threadIdx.x)];
-    sN[threadIdx.y][threadIdx.x] = N.elements[(r * BLOCK_SIZE + threadIdx.y) * N.width + row];
+    sM[threadIdx.y][threadIdx.x] =
+        M.elements[col * M.width + (r * BLOCK_SIZE + threadIdx.x)];
+    sN[threadIdx.y][threadIdx.x] =
+        N.elements[(r * BLOCK_SIZE + threadIdx.y) * N.width + row];
 
     __syncthreads();
 
