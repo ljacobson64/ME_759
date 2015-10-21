@@ -12,6 +12,6 @@
 for i in $(seq -f "%2g" 4 11); do
   ../bld/p2 1 $((2**$i))
 done
-../bld p2 0 4096
-../bld p2 0 8192
-../bld p2 0 11360
+../bld/p2 0 4096
+../bld/p2 0 8192
+../bld/p2 0 11360
