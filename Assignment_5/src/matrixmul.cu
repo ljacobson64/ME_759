@@ -83,10 +83,9 @@ int main(int argc, char** argv) {
   int errorM = 0, errorN = 0;
   bool compare = true;
 
-  srand(52);
-
   if (argc == 1 || argc == 2) {
     // Allocate and initialize the matrices
+    srand(52);
     int dummy;
     dummy = rand() % MAT_MAX_SIZE;
     int Mh = (dummy == 0 ? 1 : dummy);
@@ -197,8 +196,7 @@ void MatrixMulOnDevice(const Matrix Munpadded, const Matrix Nunpadded,
 
   // Setup the execution configuration
   dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
-  dim3 dimGrid((P.width + BLOCK_SIZE - 1) / BLOCK_SIZE,
-               (P.height + BLOCK_SIZE - 1) / BLOCK_SIZE);
+  dim3 dimGrid(P.width / BLOCK_SIZE, P.height / BLOCK_SIZE);
 
   // Start inclusive timing
   cudaEventRecord(start_in, 0);

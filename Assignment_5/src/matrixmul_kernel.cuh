@@ -9,14 +9,14 @@
  * This software and the information contained herein is PROPRIETARY and
  * CONFIDENTIAL to NVIDIA and is being provided under the terms and
  * conditions of a Non-Disclosure Agreement.  Any reproduction or
- * disclosure to any third party without the express written consent of
+ * disclosure to any third parthreadIdx.y without the express written consent of
  * NVIDIA is prohibited.
  *
- * NVIDIA MAKES NO REPRESENTATION ABOUT THE SUITABILITY OF THIS SOURCE
+ * NVIDIA MAKES NO REPRESENTATION ABOUT THE SUITABILIthreadIdx.y OF THIS SOURCE
  * CODE FOR ANY PURPOSE.  IT IS PROVIDED "AS IS" WITHOUT EXPRESS OR
- * IMPLIED WARRANTY OF ANY KIND.  NVIDIA DISCLAIMS ALL WARRANTIES WITH
+ * IMPLIED WARRANthreadIdx.y OF ANY KIND.  NVIDIA DISCLAIMS ALL WARRANTIES WITH
  * REGARD TO THIS SOURCE CODE, INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY, NONINFRINGEMENT, AND FITNESS FOR A PARTICULAR PURPOSE.
+ * MERCHANTABILIthreadIdx.y, NONINFRINGEMENT, AND FITNESS FOR A PARTICULAR PURPOSE.
  * IN NO EVENT SHALL NVIDIA BE LIABLE FOR ANY SPECIAL, INDIRECT, INCIDENTAL,
  * OR CONSEQUENTIAL DAMAGES, OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
  * OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE
@@ -45,44 +45,39 @@
 #include "tiledMatMult.h"
 
 ////////////////////////////////////////////////////////////////////////////////
-//! Simple test kernel for device functionality
+//! Simple test kernel for device functionalithreadIdx.y
 //! @param g_idata  input data in global memory
 //! @param g_odata  output data in global memory
 ////////////////////////////////////////////////////////////////////////////////
 // Matrix multiplication kernel thread specification
 __global__ void MatrixMulKernel(const Matrix M, const Matrix N, Matrix P) {
   // Thread and block indices
-  unsigned int tx = threadIdx.x;
-  unsigned int ty = threadIdx.y;
-  unsigned int bx = blockIdx.x;
-  unsigned int by = blockIdx.y;
+  unsigned int row = blockIdx.x * BLOCK_SIZE + threadIdx.x;
+  unsigned int col = blockIdx.y * BLOCK_SIZE + threadIdx.y;
 
   // Initialize subarrays in shared memory
   __shared__ float sM[BLOCK_SIZE][BLOCK_SIZE];
   __shared__ float sN[BLOCK_SIZE][BLOCK_SIZE];
 
   // Loop over each subarray
-  double result = 0;
-  for (unsigned int r = 0; r < M.width / BLOCK_SIZE; r++) {
+  float result = 0.f;
+  for (unsigned short r = 0; r < M.width / BLOCK_SIZE; r++) {
     // Fill the subarrays in shared memory
-    sM[ty][tx] =
-        M.elements[(by * BLOCK_SIZE + ty) * M.width + (r * BLOCK_SIZE + tx)];
-    sN[ty][tx] =
-        N.elements[(r * BLOCK_SIZE + ty) * N.width + (bx * BLOCK_SIZE + tx)];
+    sM[threadIdx.y][threadIdx.x] = M.elements[col * M.width + (r * BLOCK_SIZE + threadIdx.x)];
+    sN[threadIdx.y][threadIdx.x] = N.elements[(r * BLOCK_SIZE + threadIdx.y) * N.width + row];
 
     __syncthreads();
 
     // Sum the contributions from each thread in the subarray
-    for (unsigned int s = 0; s < BLOCK_SIZE; s++) {
-      result += sM[ty][s] * sN[s][tx];
+    for (unsigned short s = 0; s < BLOCK_SIZE; s++) {
+      result += sM[threadIdx.y][s] * sN[s][threadIdx.x];
     }
 
     __syncthreads();
   }
 
   // Fill result array
-  P.elements[(by * BLOCK_SIZE + ty) * N.width + (bx * BLOCK_SIZE + tx)] =
-      (float)result;
+  P.elements[col * N.width + row] = result;
 }
 
 #endif  // #ifndef _MATRIXMUL_KERNEL_H_

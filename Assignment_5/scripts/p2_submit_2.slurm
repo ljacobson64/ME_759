@@ -11,3 +11,5 @@
 
 export CUDA_PROFILE=1
 ../bld/p2 0 11360
+cat cuda_profile_0.log
+rm -f cuda_profile_0.log

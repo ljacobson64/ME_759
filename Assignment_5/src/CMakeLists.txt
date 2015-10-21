@@ -1,7 +1,7 @@
 cmake_minimum_required (VERSION 2.8)
 
 find_package(CUDA REQUIRED)
-set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}; -gencode arch=compute_20,code=sm_20)
+set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}; -gencode arch=compute_20,code=sm_20 -Xptxas=-v)
 
 cuda_add_executable(p1 vector_reduction.cu)
 cuda_add_executable(p2 matrixmul.cu)
