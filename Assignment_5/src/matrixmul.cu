@@ -123,6 +123,7 @@ int main(int argc, char** argv) {
     }
   }
 
+  printf("Block size: %d\n", BLOCK_SIZE);
   printf("Dimension M[height,width]: %d  %d\n", M.height, M.width);
   printf("Dimension N[height,width]: %d  %d\n", N.height, N.width);
 
