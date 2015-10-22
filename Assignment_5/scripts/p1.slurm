@@ -9,4 +9,7 @@
 #SBATCH --output=/home/jacobson/p1_%J.out
 #SBATCH --error=/home/jacobson/p1_%J.err
 
+export CUDA_PROFILE=1
 ../bld/p1
+cat cuda_profile_0.log
+rm -f cuda_profile_0.log

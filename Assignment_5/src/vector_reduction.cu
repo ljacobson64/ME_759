@@ -161,9 +161,9 @@ float computeOnDevice(float* h_data, int num_elements, int block_size) {
              cudaMemcpyHostToDevice);
 
   // Execute device kernel
-  reduction << <num_blocks, block_size, sizeof(float) * block_size>>>
+  reduction <<<num_blocks, block_size, sizeof(float) * block_size>>>
       (g0_data, g1_data, num_elements);
-  reduction << <1, num_blocks, sizeof(float) * num_blocks>>>
+  reduction <<<1, num_blocks, sizeof(float) * num_blocks>>>
       (g1_data, g2_data, num_blocks);
 
   // Copy the result array back to the host

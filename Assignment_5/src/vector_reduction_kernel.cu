@@ -55,7 +55,7 @@ __global__ void reduction(float *gi_data, float *go_data, int n) {
   // Add the first and second halves of the array and place the result in the
   // first half. Then add the first and second halves of the original first
   // half, and repeat until the final block sum is computed. The total number of
-  // loops is equal to log_2(blockDim.x) - 1.
+  // loops is equal to log_2(blockDim.x).
   for (int s = blockDim.x / 2; s > 0; s >>= 1) {
     if (threadIdx.x < s) {
       s_data[threadIdx.x] += s_data[threadIdx.x + s];
