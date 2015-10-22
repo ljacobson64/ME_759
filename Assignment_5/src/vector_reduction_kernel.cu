@@ -46,7 +46,7 @@ __global__ void reduction(float *gi_data, float *go_data, int n) {
   extern __shared__ float s_data[];
 
   // Load global memory into shared memory
-  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
   s_data[threadIdx.x] = gi_data[i];
 
   // Make sure all the memory in a block is loaded before continuing
@@ -56,9 +56,9 @@ __global__ void reduction(float *gi_data, float *go_data, int n) {
   // first half. Then add the first and second halves of the original first
   // half, and repeat until the final block sum is computed. The total number of
   // loops is equal to log_2(blockDim.x).
-  for (int s = blockDim.x / 2; s > 0; s >>= 1) {
-    if (threadIdx.x < s) {
-      s_data[threadIdx.x] += s_data[threadIdx.x + s];
+  for (unsigned int offset = blockDim.x / 2; offset > 0; offset >>= 1) {
+    if (threadIdx.x < offset) {
+      s_data[threadIdx.x] += s_data[threadIdx.x + offset];
     }
     __syncthreads();
   }
