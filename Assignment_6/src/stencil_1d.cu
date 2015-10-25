@@ -76,6 +76,8 @@ __global__ void applyStencil1D_V5(int sIdx, int eIdx, const float *weights,
 
   __syncthreads();
 
+  if (i >= eIdx) return;
+
   // Calculate result
   float result = 0.f;
   result += weights[0] * sdata[threadIdx.x];
@@ -109,15 +111,15 @@ int main(int argc, char *argv[]) {
   int version, N;
   if (argc == 3) {
     version = atoi(argv[1]);
-    N = int_power(10, atoi(argv[2]));
+    N = int_power(2, atoi(argv[2]));
   } else {
-    printf("Usage: ./p1 <kernel_version> <log10(N)>\n");
-    printf("Allowed versions: 4, 5\n");
+    printf("Usage: ./p1 <kernel_version> <log2(N)>\n");
+    printf("Allowed versions: 4, 5, 6\n");
     return 0;
   }
 
   printf("Version: %d\n", version);
-  printf("N: 10^%d\n", atoi(argv[2]));
+  printf("N: 2^%d = %d\n", atoi(argv[2]), N);
 
   int size = N * sizeof(float);
   int wsize = (2 * RADIUS + 1) * sizeof(float);
@@ -134,10 +136,17 @@ int main(int argc, char *argv[]) {
 
   // Allocate host resources
   float *weights, *in, *out, *cuda_out;
-  weights = (float *)malloc(wsize);
-  in = (float *)malloc(size);
-  out = (float *)malloc(size);
-  cuda_out = (float *)malloc(size);
+  if (version == 4 || version == 5) {
+    weights = (float *)malloc(wsize);
+    in = (float *)malloc(size);
+    out = (float *)malloc(size);
+    cuda_out = (float *)malloc(size);
+  } else if (version == 6) {
+    cudaMallocHost(&weights, wsize);
+    cudaMallocHost(&in, size);
+    cudaMallocHost(&out, size);
+    cudaMallocHost(&cuda_out, size);
+  }
 
   // Allocate device resources
   float *d_weights, *d_in, *d_out;
@@ -148,6 +157,11 @@ int main(int argc, char *argv[]) {
   // Fill weights and array
   initializeWeights(weights, RADIUS);
   initializeArray(in, N);
+
+  // Setup grid
+  dim3 dimBlock = BLOCK_SIZE;
+  dim3 dimGrid = (N + BLOCK_SIZE - 1) / BLOCK_SIZE;
+  int shared_size = (BLOCK_SIZE + 2 * RADIUS) * sizeof(float);
 
   // Start inclusive timing
   cudaEventRecord(start_in, 0);
@@ -161,11 +175,10 @@ int main(int argc, char *argv[]) {
 
   // Execute kernel
   if (version == 4)
-    applyStencil1D_V4 << <(N + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE>>>
+    applyStencil1D_V4 <<<dimGrid, dimBlock>>>
         (RADIUS, N - RADIUS, d_weights, d_in, d_out);
-  else if (version == 5)
-    applyStencil1D_V5 << <(N + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE,
-                          (BLOCK_SIZE + 2 * RADIUS) * sizeof(float)>>>
+  else if (version == 5 || version == 6)
+    applyStencil1D_V5 <<<dimGrid, dimBlock, shared_size>>>
         (RADIUS, N - RADIUS, d_weights, d_in, d_out);
 
   // End exclusive timing
@@ -185,10 +198,8 @@ int main(int argc, char *argv[]) {
   cudaEventRecord(end_cpu, 0);
   cudaEventSynchronize(end_cpu);
   int nDiffs = checkResults(RADIUS, N - RADIUS, cuda_out, out);
-  if (nDiffs == 0)
-    printf("Looks good.\n");
-  else
-    printf("Doesn't look good: %d differences\n", nDiffs);
+  if (nDiffs == 0) printf("Looks good.\n");
+  else printf("Doesn't look good: %d differences\n", nDiffs);
 
   // Calculate durations
   cudaEventElapsedTime(&dur_ex, start_ex, end_ex);
