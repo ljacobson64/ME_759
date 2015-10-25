@@ -47,7 +47,7 @@ void applyStencil1D_SEQ(int sIdx, int eIdx, const float *weights, float *in,
 __global__ void applyStencil1D_V4(int sIdx, int eIdx, const float *weights,
                                   float *in, float *out) {
   int i = sIdx + blockIdx.x * blockDim.x + threadIdx.x;
-  
+
   if (i >= eIdx) return;
 
   float result = 0.f;
@@ -99,33 +99,45 @@ int int_power(int x, int n) {
     } else {
       y *= x;
       x *= x;
-      n = (n-1)/2;
+      n = (n - 1) / 2;
     }
   }
-  return x*y;
+  return x * y;
 }
 
 int main(int argc, char *argv[]) {
-  int method, N;
+  int version, N;
   if (argc == 3) {
-    method = atoi(argv[1]);
+    version = atoi(argv[1]);
     N = int_power(10, atoi(argv[2]));
-  }
-  else {
+  } else {
     printf("Usage: ./p1 <kernel_version> <log10(N)>\n");
     printf("Allowed versions: 4, 5\n");
     return 0;
   }
 
+  printf("Version: %d\n", version);
+  printf("N: 10^%d\n", atoi(argv[2]));
+
   int size = N * sizeof(float);
   int wsize = (2 * RADIUS + 1) * sizeof(float);
-  
+
+  // Setup timing
+  float dur_ex, dur_in, dur_cpu;
+  cudaEvent_t start_ex, end_ex, start_in, end_in, start_cpu, end_cpu;
+  cudaEventCreate(&start_ex);
+  cudaEventCreate(&end_ex);
+  cudaEventCreate(&start_in);
+  cudaEventCreate(&end_in);
+  cudaEventCreate(&start_cpu);
+  cudaEventCreate(&end_cpu);
+
   // Allocate host resources
   float *weights, *in, *out, *cuda_out;
-  weights  = (float*)malloc(wsize);
-  in       = (float*)malloc(size);
-  out      = (float*)malloc(size);
-  cuda_out = (float*)malloc(size);
+  weights = (float *)malloc(wsize);
+  in = (float *)malloc(size);
+  out = (float *)malloc(size);
+  cuda_out = (float *)malloc(size);
 
   // Allocate device resources
   float *d_weights, *d_in, *d_out;
@@ -137,28 +149,55 @@ int main(int argc, char *argv[]) {
   initializeWeights(weights, RADIUS);
   initializeArray(in, N);
 
+  // Start inclusive timing
+  cudaEventRecord(start_in, 0);
+
   // Copy to device
   cudaMemcpy(d_weights, weights, wsize, cudaMemcpyHostToDevice);
   cudaMemcpy(d_in, in, size, cudaMemcpyHostToDevice);
 
+  // Start exclusive timing
+  cudaEventRecord(start_ex, 0);
+
   // Execute kernel
-  if (method == 4)
-    applyStencil1D_V4 <<<(N + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE>>>
+  if (version == 4)
+    applyStencil1D_V4 << <(N + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE>>>
         (RADIUS, N - RADIUS, d_weights, d_in, d_out);
-  else if (method == 5)
-    applyStencil1D_V5 <<<(N + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE,
-        (BLOCK_SIZE + 2 * RADIUS) * sizeof(float)>>>
+  else if (version == 5)
+    applyStencil1D_V5 << <(N + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE,
+                          (BLOCK_SIZE + 2 * RADIUS) * sizeof(float)>>>
         (RADIUS, N - RADIUS, d_weights, d_in, d_out);
 
+  // End exclusive timing
+  cudaEventRecord(end_ex, 0);
+  cudaEventSynchronize(end_ex);
 
   // Copy from device
   cudaMemcpy(cuda_out, d_out, size, cudaMemcpyDeviceToHost);
 
+  // End inclusive timing
+  cudaEventRecord(end_in, 0);
+  cudaEventSynchronize(end_in);
+
   // Check against result on CPU
+  cudaEventRecord(start_cpu, 0);
   applyStencil1D_SEQ(RADIUS, N - RADIUS, weights, in, out);
+  cudaEventRecord(end_cpu, 0);
+  cudaEventSynchronize(end_cpu);
   int nDiffs = checkResults(RADIUS, N - RADIUS, cuda_out, out);
-  if (nDiffs == 0) printf("Looks good.\n");
-  else printf("Doesn't look good: %d differences\n", nDiffs);
+  if (nDiffs == 0)
+    printf("Looks good.\n");
+  else
+    printf("Doesn't look good: %d differences\n", nDiffs);
+
+  // Calculate durations
+  cudaEventElapsedTime(&dur_ex, start_ex, end_ex);
+  cudaEventElapsedTime(&dur_in, start_in, end_in);
+  cudaEventElapsedTime(&dur_cpu, start_cpu, end_cpu);
+  printf("GPU execution time (exclusive): %15.6f ms\n", dur_ex);
+  printf("GPU execution time (inclusive): %15.6f ms\n", dur_in);
+  printf("CPU execution time:             %15.6f ms\n", dur_cpu);
+  printf("\n");
 
   // Free resources
   free(weights);
@@ -168,5 +207,12 @@ int main(int argc, char *argv[]) {
   cudaFree(d_weights);
   cudaFree(d_in);
   cudaFree(d_out);
+  cudaEventDestroy(start_ex);
+  cudaEventDestroy(end_ex);
+  cudaEventDestroy(start_in);
+  cudaEventDestroy(end_in);
+  cudaEventDestroy(start_cpu);
+  cudaEventDestroy(end_cpu);
+
   return 0;
 }

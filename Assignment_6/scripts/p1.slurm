@@ -9,9 +9,9 @@
 #SBATCH --output=/home/jacobson/p1_%J.out
 #SBATCH --error=/home/jacobson/p1_%J.err
 
-for ((i = 1; i < 8; i++)); do
+for ((i = 3; i <= 8; i++)); do
   ../bld/p1 4 $i
 done
-for ((i = 1; i < 8; i++)); do
+for ((i = 3; i <= 8; i++)); do
   ../bld/p1 5 $i
 done
