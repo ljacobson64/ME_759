@@ -34,8 +34,8 @@ void initializeArray(float *arr, int nElements) {
     arr[i] = (float)(rand() % (myMaxNumber - myMinNumber + 1) + myMinNumber);
 }
 
-void applyStencil1D_SEQ(int sIdx, int eIdx,
-                        const float *weights, float *in, float *out) {
+void applyStencil1D_SEQ(int sIdx, int eIdx, const float *weights, float *in,
+                        float *out) {
   for (int i = sIdx; i < eIdx; i++) {
     out[i] = 0.f;
     out[i] += weights[0] * in[i - RADIUS];
@@ -49,10 +49,10 @@ void applyStencil1D_SEQ(int sIdx, int eIdx,
   }
 }
 
-__global__ void applyStencil1D_V4(int sIdx, int eIdx,
-                                  const float *weights, float *in, float *out) {
+__global__ void applyStencil1D_V4(int sIdx, int eIdx, const float *weights,
+                                  float *in, float *out) {
   int i = sIdx + (blockIdx.x * blockDim.x + threadIdx.x) +
-                   blockDim.x * gridDim.x * blockIdx.y;
+          blockDim.x * gridDim.x * blockIdx.y;
 
   if (i >= eIdx) return;
 
@@ -68,11 +68,11 @@ __global__ void applyStencil1D_V4(int sIdx, int eIdx,
   out[i] = result;
 }
 
-__global__ void applyStencil1D_V5(int sIdx, int eIdx,
-                                  const float *weights, float *in, float *out) {
+__global__ void applyStencil1D_V5(int sIdx, int eIdx, const float *weights,
+                                  float *in, float *out) {
   extern __shared__ float sdata[];
   int i = sIdx + (blockIdx.x * blockDim.x + threadIdx.x) +
-                   blockDim.x * gridDim.x * blockIdx.y;
+          blockDim.x * gridDim.x * blockIdx.y;
 
   if (i >= eIdx) return;
 
