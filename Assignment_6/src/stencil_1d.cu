@@ -126,13 +126,12 @@ int main(int argc, char *argv[]) {
 
   // Setup timing
   float dur_ex, dur_in, dur_cpu;
-  cudaEvent_t start_ex, end_ex, start_in, end_in, start_cpu, end_cpu;
-  cudaEventCreate(&start_ex);
-  cudaEventCreate(&end_ex);
-  cudaEventCreate(&start_in);
-  cudaEventCreate(&end_in);
-  cudaEventCreate(&start_cpu);
-  cudaEventCreate(&end_cpu);
+  float dur_ex_total = 0.f;
+  float dur_in_total = 0.f;
+  float dur_cpu_total = 0.f;
+  float dur_max = 1000.f;
+  int num_runs_gpu = 0;
+  int num_runs_cpu = 0;
 
   // Allocate host resources
   float *weights, *in, *out, *cuda_out;
@@ -163,67 +162,102 @@ int main(int argc, char *argv[]) {
   dim3 dimGrid = (N + BLOCK_SIZE - 1) / BLOCK_SIZE;
   int shared_size = (BLOCK_SIZE + 2 * RADIUS) * sizeof(float);
 
-  // Start inclusive timing
-  cudaEventRecord(start_in, 0);
+  while (dur_in_total < dur_max) {
+    num_runs_gpu += 1;
+    
+    // Setup timing
+    cudaEvent_t start_ex, end_ex, start_in, end_in;
+    cudaEventCreate(&start_ex);
+    cudaEventCreate(&end_ex);
+    cudaEventCreate(&start_in);
+    cudaEventCreate(&end_in);
 
-  // Copy to device
-  cudaMemcpy(d_weights, weights, wsize, cudaMemcpyHostToDevice);
-  cudaMemcpy(d_in, in, size, cudaMemcpyHostToDevice);
+    // Start inclusive timing
+    cudaEventRecord(start_in, 0);
 
-  // Start exclusive timing
-  cudaEventRecord(start_ex, 0);
+    // Copy to device
+    cudaMemcpy(d_weights, weights, wsize, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_in, in, size, cudaMemcpyHostToDevice);
 
-  // Execute kernel
-  if (version == 4)
-    applyStencil1D_V4 <<<dimGrid, dimBlock>>>
-        (RADIUS, N - RADIUS, d_weights, d_in, d_out);
-  else if (version == 5 || version == 6)
-    applyStencil1D_V5 <<<dimGrid, dimBlock, shared_size>>>
-        (RADIUS, N - RADIUS, d_weights, d_in, d_out);
+    // Start exclusive timing
+    cudaEventRecord(start_ex, 0);
 
-  // End exclusive timing
-  cudaEventRecord(end_ex, 0);
-  cudaEventSynchronize(end_ex);
+    // Execute kernel
+    if (version == 4)
+      applyStencil1D_V4 <<<dimGrid, dimBlock>>>
+          (RADIUS, N - RADIUS, d_weights, d_in, d_out);
+    else if (version == 5 || version == 6)
+      applyStencil1D_V5 <<<dimGrid, dimBlock, shared_size>>>
+          (RADIUS, N - RADIUS, d_weights, d_in, d_out);
 
-  // Copy from device
-  cudaMemcpy(cuda_out, d_out, size, cudaMemcpyDeviceToHost);
+    // End exclusive timing
+    cudaEventRecord(end_ex, 0);
+    cudaEventSynchronize(end_ex);
 
-  // End inclusive timing
-  cudaEventRecord(end_in, 0);
-  cudaEventSynchronize(end_in);
+    // Copy from device
+    cudaMemcpy(cuda_out, d_out, size, cudaMemcpyDeviceToHost);
 
-  // Check against result on CPU
-  cudaEventRecord(start_cpu, 0);
-  applyStencil1D_SEQ(RADIUS, N - RADIUS, weights, in, out);
-  cudaEventRecord(end_cpu, 0);
-  cudaEventSynchronize(end_cpu);
+    // End inclusive timing
+    cudaEventRecord(end_in, 0);
+    cudaEventSynchronize(end_in);
+
+    // Calculate durations
+    cudaEventElapsedTime(&dur_ex, start_ex, end_ex);
+    cudaEventElapsedTime(&dur_in, start_in, end_in);
+    
+    dur_ex_total += dur_ex;
+    dur_in_total += dur_in;
+  }
+  
+  while (dur_cpu_total < dur_max) {
+    num_runs_cpu += 1;
+
+    // Setup timing
+    cudaEvent_t start_cpu, end_cpu;
+    cudaEventCreate(&start_cpu);
+    cudaEventCreate(&end_cpu);
+
+    // Run on CPU
+    cudaEventRecord(start_cpu, 0);
+    applyStencil1D_SEQ(RADIUS, N - RADIUS, weights, in, out);
+    cudaEventRecord(end_cpu, 0);
+    cudaEventSynchronize(end_cpu);
+    cudaEventElapsedTime(&dur_cpu, start_cpu, end_cpu);
+    
+    dur_cpu_total += dur_cpu;
+  }
+
+  // Compare GPU result to CPU result
   int nDiffs = checkResults(RADIUS, N - RADIUS, cuda_out, out);
   if (nDiffs == 0) printf("Looks good.\n");
   else printf("Doesn't look good: %d differences\n", nDiffs);
 
-  // Calculate durations
-  cudaEventElapsedTime(&dur_ex, start_ex, end_ex);
-  cudaEventElapsedTime(&dur_in, start_in, end_in);
-  cudaEventElapsedTime(&dur_cpu, start_cpu, end_cpu);
+  // Calculate average durations
+  dur_ex = dur_ex_total/num_runs_gpu;
+  dur_in = dur_in_total/num_runs_gpu;
+  dur_cpu = dur_cpu_total/num_runs_cpu;
+  printf("Num runs GPU: %d\n", num_runs_gpu);
+  printf("Num runs CPU: %d\n", num_runs_cpu);
   printf("GPU execution time (exclusive): %15.6f ms\n", dur_ex);
   printf("GPU execution time (inclusive): %15.6f ms\n", dur_in);
   printf("CPU execution time:             %15.6f ms\n", dur_cpu);
   printf("\n");
 
   // Free resources
-  free(weights);
-  free(in);
-  free(out);
-  free(cuda_out);
+  if (version == 4 || version == 5) {
+    free(weights);
+    free(in);
+    free(out);
+    free(cuda_out);
+  } else if (version == 6) {
+    cudaFree(weights);
+    cudaFree(in);
+    cudaFree(out);
+    cudaFree(cuda_out);
+  }
   cudaFree(d_weights);
   cudaFree(d_in);
   cudaFree(d_out);
-  cudaEventDestroy(start_ex);
-  cudaEventDestroy(end_ex);
-  cudaEventDestroy(start_in);
-  cudaEventDestroy(end_in);
-  cudaEventDestroy(start_cpu);
-  cudaEventDestroy(end_cpu);
 
   return 0;
 }
