@@ -3,8 +3,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define BLOCK_SIZE 512
 #define RADIUS 3
+#define BLOCK_SIZE 512
+#define MAX_GRID_WIDTH 49152
 
 int checkResults(int startElem, int endElem, float *cudaRes, float *res) {
   int nDiffs = 0;
@@ -14,7 +15,7 @@ int checkResults(int startElem, int endElem, float *cudaRes, float *res) {
   return nDiffs;
 }
 
-void initializeWeights(float *weights, int rad) {
+void initializeWeights(float *weights) {
   // Hardcoded for RADIUS = 3
   weights[0] = 0.50f;
   weights[1] = 0.75f;
@@ -33,20 +34,25 @@ void initializeArray(float *arr, int nElements) {
     arr[i] = (float)(rand() % (myMaxNumber - myMinNumber + 1) + myMinNumber);
 }
 
-void applyStencil1D_SEQ(int sIdx, int eIdx, const float *weights, float *in,
-                        float *out) {
+void applyStencil1D_SEQ(int sIdx, int eIdx,
+                        const float *weights, float *in, float *out) {
   for (int i = sIdx; i < eIdx; i++) {
-    out[i] = 0;
-    // Loop over all elements in the stencil
-    for (int j = -RADIUS; j <= RADIUS; j++)
-      out[i] += weights[j + RADIUS] * in[i + j];
-    out[i] = out[i] / (2 * RADIUS + 1);
+    out[i] = 0.f;
+    out[i] += weights[0] * in[i - RADIUS];
+    out[i] += weights[1] * in[i - RADIUS + 1];
+    out[i] += weights[2] * in[i - RADIUS + 2];
+    out[i] += weights[3] * in[i - RADIUS + 3];
+    out[i] += weights[4] * in[i - RADIUS + 4];
+    out[i] += weights[5] * in[i - RADIUS + 5];
+    out[i] += weights[6] * in[i - RADIUS + 6];
+    out[i] /= 7.f;
   }
 }
 
-__global__ void applyStencil1D_V4(int sIdx, int eIdx, const float *weights,
-                                  float *in, float *out) {
-  int i = sIdx + blockIdx.x * blockDim.x + threadIdx.x;
+__global__ void applyStencil1D_V4(int sIdx, int eIdx,
+                                  const float *weights, float *in, float *out) {
+  int i = sIdx + (blockIdx.x * blockDim.x + threadIdx.x) +
+                   blockDim.x * gridDim.x * blockIdx.y;
 
   if (i >= eIdx) return;
 
@@ -62,10 +68,13 @@ __global__ void applyStencil1D_V4(int sIdx, int eIdx, const float *weights,
   out[i] = result;
 }
 
-__global__ void applyStencil1D_V5(int sIdx, int eIdx, const float *weights,
-                                  float *in, float *out) {
+__global__ void applyStencil1D_V5(int sIdx, int eIdx,
+                                  const float *weights, float *in, float *out) {
   extern __shared__ float sdata[];
-  int i = sIdx + blockIdx.x * blockDim.x + threadIdx.x;
+  int i = sIdx + (blockIdx.x * blockDim.x + threadIdx.x) +
+                   blockDim.x * gridDim.x * blockIdx.y;
+
+  if (i >= eIdx) return;
 
   // Read into shared memory
   sdata[threadIdx.x + RADIUS] = in[i];
@@ -75,8 +84,6 @@ __global__ void applyStencil1D_V5(int sIdx, int eIdx, const float *weights,
   }
 
   __syncthreads();
-
-  if (i >= eIdx) return;
 
   // Calculate result
   float result = 0.f;
@@ -92,6 +99,7 @@ __global__ void applyStencil1D_V5(int sIdx, int eIdx, const float *weights,
 }
 
 int int_power(int x, int n) {
+  if (x == 0) return 0;
   if (n <= 0) return 1;
   int y = 1;
   while (n > 1) {
@@ -108,21 +116,19 @@ int int_power(int x, int n) {
 }
 
 int main(int argc, char *argv[]) {
-  int version, N;
+  int version;
+  int N;
   if (argc == 3) {
     version = atoi(argv[1]);
-    N = int_power(2, atoi(argv[2]));
+    N = int_power(10, atoi(argv[2]));
   } else {
-    printf("Usage: ./p1 <kernel_version> <log2(N)>\n");
+    printf("Usage: ./p1 <kernel_version> <log10(N)>\n");
     printf("Allowed versions: 4, 5, 6\n");
     return 0;
   }
 
-  printf("Version: %d\n", version);
-  printf("N: 2^%d = %d\n", atoi(argv[2]), N);
-
-  int size = N * sizeof(float);
   int wsize = (2 * RADIUS + 1) * sizeof(float);
+  int size = N * sizeof(float);
 
   // Setup timing
   float dur_ex, dur_in, dur_cpu;
@@ -154,13 +160,21 @@ int main(int argc, char *argv[]) {
   cudaMalloc(&d_out, size);
 
   // Fill weights and array
-  initializeWeights(weights, RADIUS);
+  initializeWeights(weights);
   initializeArray(in, N);
 
   // Setup grid
-  dim3 dimBlock = BLOCK_SIZE;
-  dim3 dimGrid = (N + BLOCK_SIZE - 1) / BLOCK_SIZE;
+  dim3 dimBlock, dimGrid;
+  dimBlock.x = BLOCK_SIZE;
+  int num_grids = (N + BLOCK_SIZE - 1) / BLOCK_SIZE;
   int shared_size = (BLOCK_SIZE + 2 * RADIUS) * sizeof(float);
+  if (num_grids <= MAX_GRID_WIDTH) {
+    dimGrid.x = num_grids;
+    dimGrid.y = 1;
+  } else {
+    dimGrid.x = MAX_GRID_WIDTH;
+    dimGrid.y = (num_grids + MAX_GRID_WIDTH - 1) / MAX_GRID_WIDTH;
+  }
 
   while (dur_in_total < dur_max) {
     num_runs_gpu += 1;
@@ -238,8 +252,16 @@ int main(int argc, char *argv[]) {
   dur_ex = dur_ex_total / num_runs_gpu;
   dur_in = dur_in_total / num_runs_gpu;
   dur_cpu = dur_cpu_total / num_runs_cpu;
-  printf("Num runs GPU: %d\n", num_runs_gpu);
-  printf("Num runs CPU: %d\n", num_runs_cpu);
+
+  // Print stuff
+  printf("Version: %u\n", version);
+  printf("N: 10^%d = %lu\n", atoi(argv[2]), N);
+  printf("blockDim.x: %u\n", dimBlock.x);
+  printf("blockDim.y: %u\n", dimBlock.y);
+  printf("gridDim.x:  %u\n", dimGrid.x);
+  printf("gridDim.y:  %u\n", dimGrid.y);
+  printf("Num runs GPU: %u\n", num_runs_gpu);
+  printf("Num runs CPU: %u\n", num_runs_cpu);
   printf("GPU execution time (exclusive): %15.6f ms\n", dur_ex);
   printf("GPU execution time (inclusive): %15.6f ms\n", dur_in);
   printf("CPU execution time:             %15.6f ms\n", dur_cpu);
