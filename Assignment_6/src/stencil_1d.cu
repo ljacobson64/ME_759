@@ -164,7 +164,7 @@ int main(int argc, char *argv[]) {
 
   while (dur_in_total < dur_max) {
     num_runs_gpu += 1;
-    
+
     // Setup timing
     cudaEvent_t start_ex, end_ex, start_in, end_in;
     cudaEventCreate(&start_ex);
@@ -204,11 +204,11 @@ int main(int argc, char *argv[]) {
     // Calculate durations
     cudaEventElapsedTime(&dur_ex, start_ex, end_ex);
     cudaEventElapsedTime(&dur_in, start_in, end_in);
-    
+
     dur_ex_total += dur_ex;
     dur_in_total += dur_in;
   }
-  
+
   while (dur_cpu_total < dur_max) {
     num_runs_cpu += 1;
 
@@ -223,19 +223,21 @@ int main(int argc, char *argv[]) {
     cudaEventRecord(end_cpu, 0);
     cudaEventSynchronize(end_cpu);
     cudaEventElapsedTime(&dur_cpu, start_cpu, end_cpu);
-    
+
     dur_cpu_total += dur_cpu;
   }
 
   // Compare GPU result to CPU result
   int nDiffs = checkResults(RADIUS, N - RADIUS, cuda_out, out);
-  if (nDiffs == 0) printf("Looks good.\n");
-  else printf("Doesn't look good: %d differences\n", nDiffs);
+  if (nDiffs == 0)
+    printf("Looks good.\n");
+  else
+    printf("Doesn't look good: %d differences\n", nDiffs);
 
   // Calculate average durations
-  dur_ex = dur_ex_total/num_runs_gpu;
-  dur_in = dur_in_total/num_runs_gpu;
-  dur_cpu = dur_cpu_total/num_runs_cpu;
+  dur_ex = dur_ex_total / num_runs_gpu;
+  dur_in = dur_in_total / num_runs_gpu;
+  dur_cpu = dur_cpu_total / num_runs_cpu;
   printf("Num runs GPU: %d\n", num_runs_gpu);
   printf("Num runs CPU: %d\n", num_runs_cpu);
   printf("GPU execution time (exclusive): %15.6f ms\n", dur_ex);
