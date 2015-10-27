@@ -62,11 +62,9 @@ void computeGold(float* C, const float* A, const float* B, unsigned int hB,
       unsigned int nend = (j > (wB - 3)) ? (wB - j) + 2 : 5;
       // overlay A over B centered at element (i,j).  For each
       //  overlapping element, multiply the two and accumulate
-      for (unsigned int m = mbegin; m < mend; ++m) {
-        for (unsigned int n = nbegin; n < nend; n++) {
+      for (unsigned int m = mbegin; m < mend; ++m)
+        for (unsigned int n = nbegin; n < nend; n++)
           sum += A[m * 5 + n] * B[wB * (i + m - 2) + (j + n - 2)];
-        }
-      }
       // store the result
       C[i * wB + j] = (float)sum;
     }
