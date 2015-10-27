@@ -33,26 +33,19 @@
  * source code with only those rights set forth herein.
  */
 
-/* Matrix multiplication: C = A * B.
- * Host code.
- */
-
-// includes, system
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <math.h>
+#include "stdlib.h"
+#include "stdio.h"
+#include "string.h"
+#include "math.h"
 #include <fstream>
-// includes, project
+
+#include "2Dconvolution_gold.cpp"
 #include "2Dconvolution.h"
 
 using namespace std;
-////////////////////////////////////////////////////////////////////////////////
-// declarations, forward
 
 extern "C" void computeGold(float*, const float*, const float*, unsigned int,
                             unsigned int);
-
 Matrix AllocateDeviceMatrix(const Matrix M);
 Matrix AllocateMatrix(int height, int width, int init);
 void CopyToDeviceMatrix(Matrix Mdevice, const Matrix Mhost);
@@ -63,7 +56,6 @@ int ReadFile(Matrix* M, char* file_name);
 void WriteFile(Matrix M, char* file_name);
 void FreeDeviceMatrix(Matrix* M);
 void FreeMatrix(Matrix* M);
-
 void ConvolutionOnDevice(const Matrix M, const Matrix N, Matrix P);
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -115,14 +107,13 @@ int main(int argc, char** argv) {
 
   bool res =
       CompareResults(reference.elements, P.elements, P.width * P.height, 0.01f);
-  ;
   printf("Test %s\n", (1 == res) ? "PASSED" : "FAILED");
 
-  if (argc == 5) {
+  if (argc == 5)
     WriteFile(P, argv[4]);
-  } else if (argc == 2) {
+  else if (argc == 2)
     WriteFile(P, argv[1]);
-  }
+
 
   // Free matrices
   FreeMatrix(&M);
@@ -220,9 +211,7 @@ void FreeMatrix(Matrix* M) {
 bool CompareResults(float* A, float* B, int elements, float eps) {
   for (unsigned int i = 0; i < elements; i++) {
     float error = A[i] - B[i];
-    if (error > eps) {
-      return false;
-    }
+    if (error > eps) return false;
   }
   return true;
 }
@@ -230,11 +219,8 @@ bool CompareResults(float* A, float* B, int elements, float eps) {
 bool ReadParams(int* params, int size, char* file_name) {
   ifstream ifile(file_name);
   int i = 0;
-  for (int i = 0; i < size; i++) {
-    if (ifile.fail() == false) {
-      ifile >> params[i];
-    }
-  }
+  for (int i = 0; i < size; i++)
+    if (ifile.fail() == false) ifile >> params[i];
   return (i == size) ? 1 : 0;
 }
 
@@ -243,9 +229,8 @@ int ReadFile(Matrix* M, char* file_name) {
   unsigned int data_read = M->height * M->width;
   std::ifstream ifile(file_name);
 
-  for (unsigned int i = 0; i < data_read; i++) {
+  for (unsigned int i = 0; i < data_read; i++)
     ifile >> M->elements[i];
-  }
   ifile.close();
   return data_read;
 }
@@ -253,8 +238,7 @@ int ReadFile(Matrix* M, char* file_name) {
 // Write a 16x16 floating point matrix to file
 void WriteFile(Matrix M, char* file_name) {
   std::ofstream ofile(file_name);
-  for (unsigned int i = 0; i < M.width * M.height; i++) {
+  for (unsigned int i = 0; i < M.width * M.height; i++)
     ofile << M.elements[i];
-  }
   ofile.close();
 }

@@ -33,9 +33,8 @@
  * source code with only those rights set forth herein.
  */
 
-#include <stdlib.h>
-////////////////////////////////////////////////////////////////////////////////
-// export C interface
+#include "stdlib.h"
+
 extern "C" void computeGold(float*, const float*, const float*, unsigned int,
                             unsigned int);
 
