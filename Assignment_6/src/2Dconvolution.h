@@ -38,6 +38,7 @@
 
 // Thread block size
 #define KERNEL_SIZE 5
+#define HALF_KERNEL 2
 #define BLOCK_SIZE 16
 
 // Matrix Structure declaration

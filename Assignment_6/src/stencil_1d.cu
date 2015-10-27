@@ -1,7 +1,7 @@
-#include <cuda.h>
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include "cuda.h"
+#include "math.h"
+#include "stdio.h"
+#include "stdlib.h"
 
 #define RADIUS 3
 #define BLOCK_SIZE 512

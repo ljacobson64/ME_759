@@ -33,54 +33,104 @@
  * source code with only those rights set forth herein.
  */
 
-#include "stdlib.h"
-#include "stdio.h"
-#include "string.h"
+#include "cuda.h"
 #include "math.h"
+#include "stdio.h"
+#include "stdlib.h"
+#include "string.h"
 #include <fstream>
 
 #include "2Dconvolution_gold.cpp"
 #include "2Dconvolution.h"
 
+#define tx threadIdx.x
+#define ty threadIdx.y
+#define bx blockIdx.x
+#define by blockIdx.y
+
 using namespace std;
 
 extern "C" void computeGold(float*, const float*, const float*, unsigned int,
                             unsigned int);
+void ConvolutionOnDevice(const Matrix M, const Matrix N, Matrix P);
 Matrix AllocateDeviceMatrix(const Matrix M);
 Matrix AllocateMatrix(int height, int width, int init);
 void CopyToDeviceMatrix(Matrix Mdevice, const Matrix Mhost);
 void CopyFromDeviceMatrix(Matrix Mhost, const Matrix Mdevice);
-bool CompareResults(float* A, float* B, int elements, float eps);
+int CompareResults(float* A, float* B, int elements, float eps);
 bool ReadParams(int* params, int size, char* file_name);
 int ReadFile(Matrix* M, char* file_name);
 void WriteFile(Matrix M, char* file_name);
 void FreeDeviceMatrix(Matrix* M);
 void FreeMatrix(Matrix* M);
-void ConvolutionOnDevice(const Matrix M, const Matrix N, Matrix P);
+int int_power(int x, int n);
 
 ////////////////////////////////////////////////////////////////////////////////
 // Matrix multiplication kernel thread specification
 ////////////////////////////////////////////////////////////////////////////////
 __global__ void ConvolutionKernel(Matrix M, Matrix N, Matrix P) {
-  // Your code comes here...
+  __shared__ float sM[KERNEL_SIZE][KERNEL_SIZE];
+  __shared__ float
+      sN[BLOCK_SIZE + KERNEL_SIZE - 1][BLOCK_SIZE + KERNEL_SIZE - 1];
+  int row = bx * blockDim.x + tx;
+  int col = by * blockDim.y + ty;
+
+  // Load convolution kernel matirx into shared memory
+  if (ty < KERNEL_SIZE && tx < KERNEL_SIZE)
+    sM[ty][tx] = M.elements[col + row * M.width];
+
+  // Load appropriate part of image matrix into shared memory
+  sN[ty + HALF_KERNEL][tx + HALF_KERNEL] = N.elements[col + row * N.width];
+  if (tx < HALF_KERNEL)
+    sN[ty + HALF_KERNEL][tx] = N.elements[col - HALF_KERNEL + row * M.width];
+  if (tx >= BLOCK_SIZE - HALF_KERNEL)
+    sN[ty + HALF_KERNEL][tx] = N.elements[col + HALF_KERNEL + row * M.width];
+  if (ty < HALF_KERNEL)
+    sN[ty][tx + HALF_KERNEL] = N.elements[col + (row - HALF_KERNEL) * M.width];
+  if (ty >= BLOCK_SIZE - HALF_KERNEL)
+    sN[ty][tx + HALF_KERNEL] = N.elements[col + (row + HALF_KERNEL) * M.width];
+  if (tx < HALF_KERNEL && ty < HALF_KERNEL)
+    sN[ty][tx] = N.elements[col - HALF_KERNEL + (row - HALF_KERNEL) * M.width];
+  if (tx >= BLOCK_SIZE - HALF_KERNEL && ty < HALF_KERNEL)
+    sN[ty][tx] = N.elements[col + HALF_KERNEL + (row - HALF_KERNEL) * M.width];
+  if (tx < HALF_KERNEL && ty >= BLOCK_SIZE - HALF_KERNEL)
+    sN[ty][tx] = N.elements[col - HALF_KERNEL + (row + HALF_KERNEL) * M.width];
+  if (tx >= BLOCK_SIZE - HALF_KERNEL && ty >= BLOCK_SIZE - HALF_KERNEL)
+    sN[ty][tx] = N.elements[col + HALF_KERNEL + (row + HALF_KERNEL) * M.width];
+
+  // Make sure everything is loaded into shared memory
+  __syncthreads();
+
+  // Calculate the result
+  float result = 0.f;
+  for (int j = 0; j < KERNEL_SIZE; j++)
+    for (int i = 0; i < KERNEL_SIZE; i++)
+      result += sM[j][i] * sN[ty + j][tx + i];
+
+  // Fill P matrix with result
+  P.elements[col + row * N.width] = result;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Program main
 ////////////////////////////////////////////////////////////////////////////////
 int main(int argc, char** argv) {
-  Matrix M;
-  Matrix N;
-  Matrix P;
-
+  Matrix M, N, P;
+  bool compare = true;
   srand(2013);
 
-  if (argc != 5 && argc != 4) {
+  if (argc == 1 || argc == 2) {
     // Allocate and initialize the matrices
-    M = AllocateMatrix(KERNEL_SIZE, KERNEL_SIZE, 1);
-    N = AllocateMatrix((rand() % 1024) + 1, (rand() % 1024) + 1, 1);
-    P = AllocateMatrix(N.height, N.width, 0);
-  } else {
+    M = AllocateMatrix(KERNEL_SIZE, KERNEL_SIZE, 0);
+    N = AllocateMatrix((rand() % 1024) + 1, (rand() % 1024) + 1, 0);
+    P = AllocateMatrix(N.height, N.width, 1);
+  } else if (argc == 3) {
+    if (atoi(argv[1]) == 0) compare = false;
+    int siz = int_power(2, atoi(argv[2]));
+    M = AllocateMatrix(siz, siz, 0);
+    N = AllocateMatrix(siz, siz, 0);
+    P = AllocateMatrix(siz, siz, 1);
+  } else if (argc == 4 || argc == 5) {
     // Allocate and read in matrices from disk
     int* params = (int*)malloc(2 * sizeof(int));
     unsigned int data_read = 2;
@@ -88,7 +138,6 @@ int main(int argc, char** argv) {
       printf("Error reading parameter file\n");
       return 1;
     }
-
     M = AllocateMatrix(KERNEL_SIZE, KERNEL_SIZE, 0);
     N = AllocateMatrix(params[0], params[1], 0);
     P = AllocateMatrix(params[0], params[1], 0);
@@ -96,29 +145,37 @@ int main(int argc, char** argv) {
     (void)ReadFile(&N, argv[3]);
   }
 
-  // M * N on the device
+  printf("Kernel size: %dx%d\n", KERNEL_SIZE, KERNEL_SIZE);
+  printf("Block size: %dx%d\n", BLOCK_SIZE, BLOCK_SIZE);
+  printf("Dimension N[height,width]: %d  %d\n", N.height, N.width);
+
+  // Convolution on the device
   ConvolutionOnDevice(M, N, P);
 
-  // compute the matrix multiplication on the CPU for comparison
+  // Compute the matrix convolution on the CPU for comparison
   Matrix reference = AllocateMatrix(P.height, P.width, 0);
   computeGold(reference.elements, M.elements, N.elements, N.height, N.width);
 
-  // in this case check if the result is equivalent to the expected soluion
-
-  bool res =
-      CompareResults(reference.elements, P.elements, P.width * P.height, 0.01f);
-  printf("Test %s\n", (1 == res) ? "PASSED" : "FAILED");
+  // Check if the result is equivalent to the expected soluion
+  if (compare) {
+    int nDiffs = CompareResults(reference.elements, P.elements,
+                                P.width * P.height, 0.01f);
+    if (nDiffs == 0)
+      printf("Looks good.\n");
+    else
+      printf("Doesn't look good: %d differences\n", nDiffs);
+  }
 
   if (argc == 5)
     WriteFile(P, argv[4]);
   else if (argc == 2)
     WriteFile(P, argv[1]);
 
-
   // Free matrices
   FreeMatrix(&M);
   FreeMatrix(&N);
   FreeMatrix(&P);
+
   return 0;
 }
 
@@ -126,22 +183,57 @@ int main(int argc, char** argv) {
 //! Run a simple test for CUDA
 ////////////////////////////////////////////////////////////////////////////////
 void ConvolutionOnDevice(const Matrix M, const Matrix N, Matrix P) {
-  // Load M and N to the device
-  Matrix Md = AllocateDeviceMatrix(M);
-  CopyToDeviceMatrix(Md, M);
-  Matrix Nd = AllocateDeviceMatrix(N);
-  CopyToDeviceMatrix(Nd, N);
+  // Setup timing
+  float dur_ex, dur_in;
+  cudaEvent_t start_ex, end_ex, start_in, end_in;
+  cudaEventCreate(&start_ex);
+  cudaEventCreate(&end_ex);
+  cudaEventCreate(&start_in);
+  cudaEventCreate(&end_in);
 
-  // Allocate P on the device
+  // Allocate device matrices
+  Matrix Md = AllocateDeviceMatrix(M);
+  Matrix Nd = AllocateDeviceMatrix(N);
   Matrix Pd = AllocateDeviceMatrix(P);
-  CopyToDeviceMatrix(Pd, P);  // Clear memory
 
   // Setup the execution configuration
+  dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
+  dim3 dimGrid(P.width / BLOCK_SIZE, P.height / BLOCK_SIZE);
 
-  // Launch the device computation threads!
+  // Start inclusive timing
+  cudaEventRecord(start_in, 0);
+
+  // Load M and N to the device
+  CopyToDeviceMatrix(Md, M);
+  CopyToDeviceMatrix(Nd, N);
+  // CopyToDeviceMatrix(Pd, P);
+
+  // Start exclusive timing
+  cudaEventRecord(start_ex, 0);
+
+  // Launch the device computation threads
+  ConvolutionKernel <<<dimGrid, dimBlock>>> (Md, Nd, Pd);
+
+  // End exclusive timing
+  cudaEventRecord(end_ex, 0);
+  cudaEventSynchronize(end_ex);
 
   // Read P from the device
   CopyFromDeviceMatrix(P, Pd);
+
+  // End inclusive timing
+  cudaEventRecord(end_in, 0);
+  cudaEventSynchronize(end_in);
+
+  // Calculate durations
+  cudaEventElapsedTime(&dur_ex, start_ex, end_ex);
+  cudaEventElapsedTime(&dur_in, start_in, end_in);
+  printf("GPU execution time (exclusive): %15.6f ms\n", dur_ex);
+  printf("GPU execution time (inclusive): %15.6f ms\n", dur_in);
+  cudaEventDestroy(start_ex);
+  cudaEventDestroy(end_ex);
+  cudaEventDestroy(start_in);
+  cudaEventDestroy(end_in);
 
   // Free device matrices
   FreeDeviceMatrix(&Md);
@@ -173,10 +265,14 @@ Matrix AllocateMatrix(int height, int width, int init) {
 
   M.elements = (float*)malloc(size * sizeof(float));
 
+  // Don't fill with random numbers on option 1
+  if (init == 1) return M;
+
   for (unsigned int i = 0; i < M.height * M.width; i++) {
     M.elements[i] = (init == 0) ? (0.0f) : (rand() / (float)RAND_MAX);
     if (rand() % 2) M.elements[i] = -M.elements[i];
   }
+
   return M;
 }
 
@@ -208,12 +304,13 @@ void FreeMatrix(Matrix* M) {
 }
 
 // compare the data stored in two arrays on the host
-bool CompareResults(float* A, float* B, int elements, float eps) {
+int CompareResults(float* A, float* B, int elements, float eps) {
+  int nDiffs = 0;
   for (unsigned int i = 0; i < elements; i++) {
     float error = A[i] - B[i];
-    if (error > eps) return false;
+    if (error > eps) nDiffs++;
   }
-  return true;
+  return nDiffs;
 }
 
 bool ReadParams(int* params, int size, char* file_name) {
@@ -229,8 +326,7 @@ int ReadFile(Matrix* M, char* file_name) {
   unsigned int data_read = M->height * M->width;
   std::ifstream ifile(file_name);
 
-  for (unsigned int i = 0; i < data_read; i++)
-    ifile >> M->elements[i];
+  for (unsigned int i = 0; i < data_read; i++) ifile >> M->elements[i];
   ifile.close();
   return data_read;
 }
@@ -238,7 +334,24 @@ int ReadFile(Matrix* M, char* file_name) {
 // Write a 16x16 floating point matrix to file
 void WriteFile(Matrix M, char* file_name) {
   std::ofstream ofile(file_name);
-  for (unsigned int i = 0; i < M.width * M.height; i++)
-    ofile << M.elements[i];
+  for (unsigned int i = 0; i < M.width * M.height; i++) ofile << M.elements[i];
   ofile.close();
+}
+
+// Take integer power
+int int_power(int x, int n) {
+  if (x == 0) return 0;
+  if (n <= 0) return 1;
+  int y = 1;
+  while (n > 1) {
+    if (n % 2 == 0) {
+      x *= x;
+      n /= 2;
+    } else {
+      y *= x;
+      x *= x;
+      n = (n - 1) / 2;
+    }
+  }
+  return x * y;
 }
