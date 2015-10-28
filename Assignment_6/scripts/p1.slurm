@@ -15,3 +15,6 @@ done
 for ((i = 3; i <= 8; i++)); do
   ../bld/p1 5 $i
 done
+for ((i = 3; i <= 8; i++)); do
+  ../bld/p1 6 $i
+done
