@@ -63,6 +63,7 @@ void PrintMatrixDifs(Matrix M, Matrix N, float eps);
 int int_power(int x, int n);
 
 #define KR KERNEL_RADIUS
+#define KR2 KERNEL_RADIUS*2
 #define tx threadIdx.x
 #define ty threadIdx.y
 
@@ -74,55 +75,55 @@ __global__ void ConvolutionKernel(Matrix M, Matrix N, Matrix P) {
   __shared__ float sN[BLOCK_SIZE + 2 * KR][BLOCK_SIZE + 2 * KR];
   int row = blockIdx.y * blockDim.y + ty;
   int col = blockIdx.x * blockDim.x + tx;
+  int ind = row * N.width + col;
 
   // Load convolution kernel matirx into shared memory
   if (ty < KERNEL_SIZE && tx < KERNEL_SIZE)
     sM[ty][tx] = M.elements[ty * M.width + tx];
 
   // Load appropriate part of image matrix into shared memory
-  // I have the strange sense that this is not optimized
-  sN[ty + KR][tx + KR] = N.elements[(row)*N.width + col];
+  // I have the strange sense that this is not all that optimized
+  sN[ty + KR][tx + KR] = N.elements[ind];
   if (tx < KR)
     if (col >= KR)
-      sN[ty + KR][tx] = N.elements[(row)*N.width + col - KR];
+      sN[ty + KR][tx] = N.elements[ind - KR];
     else
       sN[ty + KR][tx] = 0.f;
   if (tx >= BLOCK_SIZE - KR)
     if (col < N.width - KR)
-      sN[ty + KR][tx + KR * 2] = N.elements[(row)*N.width + col + KR];
+      sN[ty + KR][tx + KR2] = N.elements[ind + KR];
     else
-      sN[ty + KR][tx + KR * 2] = 0.f;
+      sN[ty + KR][tx + KR2] = 0.f;
   if (ty < KR)
     if (row >= KR)
-      sN[ty][tx + KR] = N.elements[(row - KR) * N.width + col];
+      sN[ty][tx + KR] = N.elements[ind - KR * N.width];
     else
       sN[ty][tx + KR] = 0.f;
   if (ty >= BLOCK_SIZE - KR)
     if (row < N.height - KR)
-      sN[ty + KR * 2][tx + KR] = N.elements[(row + KR) * N.width + col];
+      sN[ty + KR2][tx + KR] = N.elements[ind + KR * N.width];
     else
-      sN[ty + KR * 2][tx + KR] = 0.f;
+      sN[ty + KR2][tx + KR] = 0.f;
   if (ty < KR && tx < KR)
     if (row >= KR && col >= KR)
-      sN[ty][tx] = N.elements[(row - KR) * N.width + col - KR];
+      sN[ty][tx] = N.elements[ind - KR * N.width - KR];
     else
       sN[ty][tx] = 0.f;
   if (ty < KR && tx >= BLOCK_SIZE - KR)
     if (row >= KR && col < N.width - KR)
-      sN[ty][tx + KR * 2] = N.elements[(row - KR) * N.width + col + KR];
+      sN[ty][tx + KR2] = N.elements[ind - KR * N.width + KR];
     else
-      sN[ty][tx + KR * 2] = 0.f;
+      sN[ty][tx + KR2] = 0.f;
   if (ty >= BLOCK_SIZE - KR && tx < KR)
     if (row < N.height - KR && col >= KR)
-      sN[ty + KR * 2][tx] = N.elements[(row + KR) * N.width + col - KR];
+      sN[ty + KR2][tx] = N.elements[ind + KR * N.width - KR];
     else
-      sN[ty + KR * 2][tx] = 0.f;
+      sN[ty + KR2][tx] = 0.f;
   if (ty >= BLOCK_SIZE - KR && tx >= BLOCK_SIZE - KR)
     if (row < N.height - KR && col < N.width - KR)
-      sN[ty + KR * 2][tx + KR * 2] =
-          N.elements[(row + KR) * N.width + col + KR];
+      sN[ty + KR2][tx + KR2] = N.elements[ind + KR * N.width + KR];
     else
-      sN[ty + KR * 2][tx + KR * 2] = 0.f;
+      sN[ty + KR2][tx + KR2] = 0.f;
 
   // Make sure everything is loaded into shared memory
   __syncthreads();
@@ -134,7 +135,7 @@ __global__ void ConvolutionKernel(Matrix M, Matrix N, Matrix P) {
       result += sM[j][i] * sN[ty + j][tx + i];
 
   // Fill P matrix with result
-  P.elements[row * N.width + col] = result;
+  P.elements[ind] = result;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -178,9 +179,29 @@ int main(int argc, char** argv) {
   // Convolution on the device
   ConvolutionOnDevice(M, N, P);
 
+  // Setup timing for CPU
+  int num_runs = 0;
+  float dur_cpu_total = 0.f;
+  float dur_cpu;
+  cudaEvent_t start_cpu, end_cpu;
+  cudaEventCreate(&start_cpu);
+  cudaEventCreate(&end_cpu);
+
   // Compute the matrix convolution on the CPU for comparison
   Matrix reference = AllocateMatrix(P.height, P.width, 0);
-  computeGold(reference.elements, M.elements, N.elements, N.height, N.width);
+  while (dur_cpu_total < 1000.f) {
+    num_runs++;
+    cudaEventRecord(start_cpu, 0);
+    computeGold(reference.elements, M.elements, N.elements, N.height, N.width);
+    cudaEventRecord(end_cpu, 0);
+    cudaEventSynchronize(end_cpu);
+    cudaEventElapsedTime(&dur_cpu, start_cpu, end_cpu);
+    dur_cpu_total += dur_cpu;
+  }
+  dur_cpu = dur_cpu_total / num_runs;
+
+  printf("Num runs CPU: %d\n", num_runs);
+  printf("CPU execution time:             %15.6f ms\n", dur_cpu);
 
   // Check if the result is equivalent to the expected soluion
   if (compare) {
@@ -211,12 +232,10 @@ int main(int argc, char** argv) {
 ////////////////////////////////////////////////////////////////////////////////
 void ConvolutionOnDevice(const Matrix M, const Matrix N, Matrix P) {
   // Setup timing
+  int num_runs = 0;
+  float dur_ex_total = 0.f;
+  float dur_in_total = 0.f;
   float dur_ex, dur_in;
-  cudaEvent_t start_ex, end_ex, start_in, end_in;
-  cudaEventCreate(&start_ex);
-  cudaEventCreate(&end_ex);
-  cudaEventCreate(&start_in);
-  cudaEventCreate(&end_in);
 
   // Allocate device matrices
   Matrix Md = AllocateDeviceMatrix(M);
@@ -228,39 +247,54 @@ void ConvolutionOnDevice(const Matrix M, const Matrix N, Matrix P) {
   dim3 dimGrid((P.width + BLOCK_SIZE - 1) / BLOCK_SIZE,
                (P.height + BLOCK_SIZE - 1) / BLOCK_SIZE);
 
-  // Start inclusive timing
-  cudaEventRecord(start_in, 0);
+  while (dur_in_total < 1000.f) {
+    num_runs++;
 
-  // Load M and N to the device
-  CopyToDeviceMatrix(Md, M);
-  CopyToDeviceMatrix(Nd, N);
+    // Setup timing
+    cudaEvent_t start_ex, end_ex, start_in, end_in;
+    cudaEventCreate(&start_ex);
+    cudaEventCreate(&end_ex);
+    cudaEventCreate(&start_in);
+    cudaEventCreate(&end_in);
 
-  // Start exclusive timing
-  cudaEventRecord(start_ex, 0);
+    // Start inclusive timing
+    cudaEventRecord(start_in, 0);
 
-  // Launch the device computation threads
-  ConvolutionKernel <<<dimGrid, dimBlock>>> (Md, Nd, Pd);
+    // Load M and N to the device
+    CopyToDeviceMatrix(Md, M);
+    CopyToDeviceMatrix(Nd, N);
 
-  // End exclusive timing
-  cudaEventRecord(end_ex, 0);
-  cudaEventSynchronize(end_ex);
+    // Start exclusive timing
+    cudaEventRecord(start_ex, 0);
 
-  // Read P from the device
-  CopyFromDeviceMatrix(P, Pd);
+    // Launch the device computation threads
+    ConvolutionKernel <<<dimGrid, dimBlock>>> (Md, Nd, Pd);
 
-  // End inclusive timing
-  cudaEventRecord(end_in, 0);
-  cudaEventSynchronize(end_in);
+    // End exclusive timing
+    cudaEventRecord(end_ex, 0);
+    cudaEventSynchronize(end_ex);
 
-  // Calculate durations
-  cudaEventElapsedTime(&dur_ex, start_ex, end_ex);
-  cudaEventElapsedTime(&dur_in, start_in, end_in);
+    // Read P from the device
+    CopyFromDeviceMatrix(P, Pd);
+
+    // End inclusive timing
+    cudaEventRecord(end_in, 0);
+    cudaEventSynchronize(end_in);
+
+    // Calculate durations
+    cudaEventElapsedTime(&dur_ex, start_ex, end_ex);
+    cudaEventElapsedTime(&dur_in, start_in, end_in);
+
+    dur_ex_total += dur_ex;
+    dur_in_total += dur_in;
+  }
+
+  dur_ex = dur_ex_total / num_runs;
+  dur_in = dur_in_total / num_runs;
+
+  printf("Num runs GPU: %d\n", num_runs);
   printf("GPU execution time (exclusive): %15.6f ms\n", dur_ex);
   printf("GPU execution time (inclusive): %15.6f ms\n", dur_in);
-  cudaEventDestroy(start_ex);
-  cudaEventDestroy(end_ex);
-  cudaEventDestroy(start_in);
-  cudaEventDestroy(end_in);
 
   // Free device matrices
   FreeDeviceMatrix(&Md);
