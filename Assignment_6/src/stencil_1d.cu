@@ -74,8 +74,6 @@ __global__ void applyStencil1D_V5(int sIdx, int eIdx, const float *weights,
   int i = sIdx + (blockIdx.x * blockDim.x + threadIdx.x) +
           blockDim.x * gridDim.x * blockIdx.y;
 
-  if (i >= eIdx) return;
-
   // Read into shared memory
   sdata[threadIdx.x + RADIUS] = in[i];
   if (threadIdx.x < RADIUS) {
@@ -84,6 +82,8 @@ __global__ void applyStencil1D_V5(int sIdx, int eIdx, const float *weights,
   }
 
   __syncthreads();
+
+  if (i >= eIdx) return;
 
   // Calculate result
   float result = 0.f;
