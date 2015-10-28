@@ -5,7 +5,7 @@
 
 #define RADIUS 3
 #define BLOCK_SIZE 512
-#define MAX_GRID_WIDTH 49152
+#define MAX_GRID_WIDTH 65535
 
 int checkResults(int startElem, int endElem, float *cudaRes, float *res) {
   int nDiffs = 0;
@@ -98,32 +98,19 @@ __global__ void applyStencil1D_V5(int sIdx, int eIdx, const float *weights,
   out[i] = result;
 }
 
-int int_power(int x, int n) {
-  if (x == 0) return 0;
-  if (n <= 0) return 1;
-  int y = 1;
-  while (n > 1) {
-    if (n % 2 == 0) {
-      x *= x;
-      n /= 2;
-    } else {
-      y *= x;
-      x *= x;
-      n = (n - 1) / 2;
-    }
-  }
-  return x * y;
-}
-
 int main(int argc, char *argv[]) {
-  int version;
-  int N;
-  if (argc == 3) {
+  int version, N;
+  float dur_max;
+  if (argc == 4) {
     version = atoi(argv[1]);
-    N = int_power(10, atoi(argv[2]));
-  } else {
-    printf("Usage: ./p1 <kernel_version> <log10(N)>\n");
+    N = atoi(argv[2]);
+    dur_max = atof(argv[3]) * 1000;
+    if (dur_max == 0.f) dur_max = 1e-30;
+  }
+  if (argc != 4 || (version != 4 && version != 5 && version != 6)) {
+    printf("Usage: ./p1 <kernel_version> <log10(N)> <time (s)>\n");
     printf("Allowed versions: 4, 5, 6\n");
+    printf("Entering a time of zero will produce 1 run\n");
     return 0;
   }
 
@@ -135,7 +122,6 @@ int main(int argc, char *argv[]) {
   float dur_ex_total = 0.f;
   float dur_in_total = 0.f;
   float dur_cpu_total = 0.f;
-  float dur_max = 1000.f;
   int num_runs_gpu = 0;
   int num_runs_cpu = 0;
 
@@ -175,6 +161,11 @@ int main(int argc, char *argv[]) {
     dimGrid.x = MAX_GRID_WIDTH;
     dimGrid.y = (num_grids + MAX_GRID_WIDTH - 1) / MAX_GRID_WIDTH;
   }
+
+  printf("Version: %u\n", version);
+  printf("N: %lu\n", N);
+  printf("Block size: %dx%d\n", dimBlock.y, dimBlock.x);
+  printf("Grid size:  %dx%d\n", dimGrid.y, dimGrid.x);
 
   while (dur_in_total < dur_max) {
     num_runs_gpu += 1;
@@ -223,6 +214,12 @@ int main(int argc, char *argv[]) {
     dur_in_total += dur_in;
   }
 
+  dur_ex = dur_ex_total / num_runs_gpu;
+  dur_in = dur_in_total / num_runs_gpu;
+  printf("Num runs GPU: %u\n", num_runs_gpu);
+  printf("GPU execution time (exclusive): %15.6f ms\n", dur_ex);
+  printf("GPU execution time (inclusive): %15.6f ms\n", dur_in);
+
   while (dur_cpu_total < dur_max) {
     num_runs_cpu += 1;
 
@@ -241,30 +238,16 @@ int main(int argc, char *argv[]) {
     dur_cpu_total += dur_cpu;
   }
 
+  dur_cpu = dur_cpu_total / num_runs_cpu;
+  printf("Num runs CPU: %u\n", num_runs_cpu);
+  printf("CPU execution time:             %15.6f ms\n", dur_cpu);
+
   // Compare GPU result to CPU result
   int nDiffs = checkResults(RADIUS, N - RADIUS, cuda_out, out);
   if (nDiffs == 0)
     printf("Looks good.\n");
   else
     printf("Doesn't look good: %d differences\n", nDiffs);
-
-  // Calculate average durations
-  dur_ex = dur_ex_total / num_runs_gpu;
-  dur_in = dur_in_total / num_runs_gpu;
-  dur_cpu = dur_cpu_total / num_runs_cpu;
-
-  // Print stuff
-  printf("Version: %u\n", version);
-  printf("N: 10^%d = %lu\n", atoi(argv[2]), N);
-  printf("blockDim.x: %u\n", dimBlock.x);
-  printf("blockDim.y: %u\n", dimBlock.y);
-  printf("gridDim.x:  %u\n", dimGrid.x);
-  printf("gridDim.y:  %u\n", dimGrid.y);
-  printf("Num runs GPU: %u\n", num_runs_gpu);
-  printf("Num runs CPU: %u\n", num_runs_cpu);
-  printf("GPU execution time (exclusive): %15.6f ms\n", dur_ex);
-  printf("GPU execution time (inclusive): %15.6f ms\n", dur_in);
-  printf("CPU execution time:             %15.6f ms\n", dur_cpu);
   printf("\n");
 
   // Free resources

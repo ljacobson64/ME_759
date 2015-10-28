@@ -9,12 +9,21 @@
 #SBATCH --output=/home/jacobson/p1_%J.out
 #SBATCH --error=/home/jacobson/p1_%J.err
 
-for ((i = 3; i <= 8; i++)); do
-  ../bld/p1 4 $i
+declare -a N_arr=(      100       316 \
+                       1000      3162 \
+                      10000     31623 \
+                     100000    316228 \
+                    1000000   3162278 \
+                   10000000  31622777 \
+                  100000000 193134592)
+time=1.0
+
+for N in "${N_arr[@]}"; do
+  ../bld/p1 4 $N $time
 done
-for ((i = 3; i <= 8; i++)); do
-  ../bld/p1 5 $i
+for N in "${N_arr[@]}"; do
+  ../bld/p1 5 $N $time
 done
-for ((i = 3; i <= 8; i++)); do
-  ../bld/p1 6 $i
+for N in "${N_arr[@]}"; do
+  ../bld/p1 6 $N $time
 done

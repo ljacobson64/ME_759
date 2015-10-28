@@ -9,6 +9,9 @@
 #SBATCH --output=/home/jacobson/p2_%J.out
 #SBATCH --error=/home/jacobson/p2_%J.err
 
-for ((i = 4; i <= 13; i++)); do
-  ../bld/p2 1 $i
+declare -a N_arr=(16 32 64 128 256 512 1024 2048 4096 8192 13904)
+time=1.0
+
+for N in "${N_arr[@]}"; do
+  ../bld/p2 $N $time
 done

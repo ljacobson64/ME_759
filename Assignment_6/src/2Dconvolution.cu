@@ -47,7 +47,7 @@ using namespace std;
 
 extern "C" void computeGold(float*, const float*, const float*, unsigned int,
                             unsigned int);
-void ConvolutionOnDevice(const Matrix M, const Matrix N, Matrix P);
+void ConvolutionOnDevice(const Matrix M, const Matrix N, Matrix P, float dur_max);
 Matrix AllocateDeviceMatrix(const Matrix M);
 Matrix AllocateMatrix(int height, int width, int init);
 int CompareResults(float* A, float* B, int elements, float eps);
@@ -60,7 +60,6 @@ int ReadFile(Matrix* M, char* file_name);
 void WriteFile(Matrix M, char* file_name);
 void PrintMatrix(Matrix M);
 void PrintMatrixDifs(Matrix M, Matrix N, float eps);
-int int_power(int x, int n);
 
 #define KR KERNEL_RADIUS
 #define KR2 KERNEL_RADIUS * 2
@@ -143,7 +142,7 @@ __global__ void ConvolutionKernel(Matrix M, Matrix N, Matrix P) {
 ////////////////////////////////////////////////////////////////////////////////
 int main(int argc, char** argv) {
   Matrix M, N, P;
-  bool compare = true;
+  float dur_max;
   srand(2013);
 
   if (argc == 1 || argc == 2) {
@@ -152,8 +151,9 @@ int main(int argc, char** argv) {
     N = AllocateMatrix((rand() % 1024) + 1, (rand() % 1024) + 1, 0);
     P = AllocateMatrix(N.height, N.width, 1);
   } else if (argc == 3) {
-    if (atoi(argv[1]) == 0) compare = false;
-    int siz = int_power(2, atoi(argv[2]));
+    int siz = atoi(argv[1]);
+    dur_max = atof(argv[2]) * 1000;
+    if (dur_max == 0.f) dur_max = 1e-30;
     M = AllocateMatrix(KERNEL_SIZE, KERNEL_SIZE, 0);
     N = AllocateMatrix(siz, siz, 0);
     P = AllocateMatrix(siz, siz, 1);
@@ -177,7 +177,7 @@ int main(int argc, char** argv) {
   printf("Image size:  %dx%d\n", N.height, N.width);
 
   // Convolution on the device
-  ConvolutionOnDevice(M, N, P);
+  ConvolutionOnDevice(M, N, P, dur_max);
 
   // Setup timing for CPU
   int num_runs = 0;
@@ -189,7 +189,7 @@ int main(int argc, char** argv) {
 
   // Compute the matrix convolution on the CPU for comparison
   Matrix reference = AllocateMatrix(P.height, P.width, 0);
-  while (dur_cpu_total < 1000.f) {
+  while (dur_cpu_total < dur_max) {
     num_runs++;
     cudaEventRecord(start_cpu, 0);
     computeGold(reference.elements, M.elements, N.elements, N.height, N.width);
@@ -204,15 +204,12 @@ int main(int argc, char** argv) {
   printf("CPU execution time:             %15.6f ms\n", dur_cpu);
 
   // Check if the result is equivalent to the expected soluion
-  if (compare) {
-    int nDiffs = CompareResults(reference.elements, P.elements,
-                                P.width * P.height, 0.001f);
-    if (nDiffs == 0)
-      printf("Looks good.\n");
-    else
-      printf("Doesn't look good: %d/%d are different\n", nDiffs,
-             P.width * P.height);
-  }
+  int nDiffs = CompareResults(reference.elements, P.elements,
+                              P.width * P.height, 0.001f);
+  if (nDiffs == 0)
+    printf("Looks good.\n");
+  else
+    printf("Doesn't look good: %d/%d are different\n", nDiffs, P.width * P.height);
 
   printf("\n");
 
@@ -232,7 +229,7 @@ int main(int argc, char** argv) {
 ////////////////////////////////////////////////////////////////////////////////
 //! Run a simple test for CUDA
 ////////////////////////////////////////////////////////////////////////////////
-void ConvolutionOnDevice(const Matrix M, const Matrix N, Matrix P) {
+void ConvolutionOnDevice(const Matrix M, const Matrix N, Matrix P, float dur_max) {
   // Setup timing
   int num_runs = 0;
   float dur_ex_total = 0.f;
@@ -249,7 +246,7 @@ void ConvolutionOnDevice(const Matrix M, const Matrix N, Matrix P) {
   dim3 dimGrid((P.width + BLOCK_SIZE - 1) / BLOCK_SIZE,
                (P.height + BLOCK_SIZE - 1) / BLOCK_SIZE);
 
-  while (dur_in_total < 1000.f) {
+  while (dur_in_total < dur_max) {
     num_runs++;
 
     // Setup timing
