@@ -63,7 +63,7 @@ void PrintMatrixDifs(Matrix M, Matrix N, float eps);
 int int_power(int x, int n);
 
 #define KR KERNEL_RADIUS
-#define KR2 KERNEL_RADIUS*2
+#define KR2 KERNEL_RADIUS * 2
 #define tx threadIdx.x
 #define ty threadIdx.y
 
@@ -213,6 +213,8 @@ int main(int argc, char** argv) {
       printf("Doesn't look good: %d/%d are different\n", nDiffs,
              P.width * P.height);
   }
+
+  printf("\n");
 
   if (argc == 5)
     WriteFile(P, argv[4]);
