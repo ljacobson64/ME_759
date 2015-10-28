@@ -43,11 +43,6 @@
 #include "2Dconvolution_gold.cpp"
 #include "2Dconvolution.h"
 
-#define tx threadIdx.x
-#define ty threadIdx.y
-#define bx blockIdx.x
-#define by blockIdx.y
-
 using namespace std;
 
 extern "C" void computeGold(float*, const float*, const float*, unsigned int,
@@ -55,48 +50,79 @@ extern "C" void computeGold(float*, const float*, const float*, unsigned int,
 void ConvolutionOnDevice(const Matrix M, const Matrix N, Matrix P);
 Matrix AllocateDeviceMatrix(const Matrix M);
 Matrix AllocateMatrix(int height, int width, int init);
+int CompareResults(float* A, float* B, int elements, float eps);
 void CopyToDeviceMatrix(Matrix Mdevice, const Matrix Mhost);
 void CopyFromDeviceMatrix(Matrix Mhost, const Matrix Mdevice);
-int CompareResults(float* A, float* B, int elements, float eps);
+void FreeDeviceMatrix(Matrix* M);
+void FreeMatrix(Matrix* M);
 bool ReadParams(int* params, int size, char* file_name);
 int ReadFile(Matrix* M, char* file_name);
 void WriteFile(Matrix M, char* file_name);
-void FreeDeviceMatrix(Matrix* M);
-void FreeMatrix(Matrix* M);
+void PrintMatrix(Matrix M);
+void PrintMatrixDifs(Matrix M, Matrix N, float eps);
 int int_power(int x, int n);
+
+#define KR KERNEL_RADIUS
+#define tx threadIdx.x
+#define ty threadIdx.y
 
 ////////////////////////////////////////////////////////////////////////////////
 // Matrix multiplication kernel thread specification
 ////////////////////////////////////////////////////////////////////////////////
 __global__ void ConvolutionKernel(Matrix M, Matrix N, Matrix P) {
   __shared__ float sM[KERNEL_SIZE][KERNEL_SIZE];
-  __shared__ float
-      sN[BLOCK_SIZE + KERNEL_SIZE - 1][BLOCK_SIZE + KERNEL_SIZE - 1];
-  int row = bx * blockDim.x + tx;
-  int col = by * blockDim.y + ty;
+  __shared__ float sN[BLOCK_SIZE + 2 * KR][BLOCK_SIZE + 2 * KR];
+  int row = blockIdx.y * blockDim.y + ty;
+  int col = blockIdx.x * blockDim.x + tx;
 
   // Load convolution kernel matirx into shared memory
   if (ty < KERNEL_SIZE && tx < KERNEL_SIZE)
-    sM[ty][tx] = M.elements[col + row * M.width];
+    sM[ty][tx] = M.elements[ty * M.width + tx];
 
   // Load appropriate part of image matrix into shared memory
-  sN[ty + HALF_KERNEL][tx + HALF_KERNEL] = N.elements[col + row * N.width];
-  if (tx < HALF_KERNEL)
-    sN[ty + HALF_KERNEL][tx] = N.elements[col - HALF_KERNEL + row * M.width];
-  if (tx >= BLOCK_SIZE - HALF_KERNEL)
-    sN[ty + HALF_KERNEL][tx] = N.elements[col + HALF_KERNEL + row * M.width];
-  if (ty < HALF_KERNEL)
-    sN[ty][tx + HALF_KERNEL] = N.elements[col + (row - HALF_KERNEL) * M.width];
-  if (ty >= BLOCK_SIZE - HALF_KERNEL)
-    sN[ty][tx + HALF_KERNEL] = N.elements[col + (row + HALF_KERNEL) * M.width];
-  if (tx < HALF_KERNEL && ty < HALF_KERNEL)
-    sN[ty][tx] = N.elements[col - HALF_KERNEL + (row - HALF_KERNEL) * M.width];
-  if (tx >= BLOCK_SIZE - HALF_KERNEL && ty < HALF_KERNEL)
-    sN[ty][tx] = N.elements[col + HALF_KERNEL + (row - HALF_KERNEL) * M.width];
-  if (tx < HALF_KERNEL && ty >= BLOCK_SIZE - HALF_KERNEL)
-    sN[ty][tx] = N.elements[col - HALF_KERNEL + (row + HALF_KERNEL) * M.width];
-  if (tx >= BLOCK_SIZE - HALF_KERNEL && ty >= BLOCK_SIZE - HALF_KERNEL)
-    sN[ty][tx] = N.elements[col + HALF_KERNEL + (row + HALF_KERNEL) * M.width];
+  // I have the strange sense that this is not optimized
+  sN[ty + KR][tx + KR] = N.elements[(row)*N.width + col];
+  if (tx < KR)
+    if (col >= KR)
+      sN[ty + KR][tx] = N.elements[(row)*N.width + col - KR];
+    else
+      sN[ty + KR][tx] = 0.f;
+  if (tx >= BLOCK_SIZE - KR)
+    if (col < N.width - KR)
+      sN[ty + KR][tx + KR * 2] = N.elements[(row)*N.width + col + KR];
+    else
+      sN[ty + KR][tx + KR * 2] = 0.f;
+  if (ty < KR)
+    if (row >= KR)
+      sN[ty][tx + KR] = N.elements[(row - KR) * N.width + col];
+    else
+      sN[ty][tx + KR] = 0.f;
+  if (ty >= BLOCK_SIZE - KR)
+    if (row < N.height - KR)
+      sN[ty + KR * 2][tx + KR] = N.elements[(row + KR) * N.width + col];
+    else
+      sN[ty + KR * 2][tx + KR] = 0.f;
+  if (ty < KR && tx < KR)
+    if (row >= KR && col >= KR)
+      sN[ty][tx] = N.elements[(row - KR) * N.width + col - KR];
+    else
+      sN[ty][tx] = 0.f;
+  if (ty < KR && tx >= BLOCK_SIZE - KR)
+    if (row >= KR && col < N.width - KR)
+      sN[ty][tx + KR * 2] = N.elements[(row - KR) * N.width + col + KR];
+    else
+      sN[ty][tx + KR * 2] = 0.f;
+  if (ty >= BLOCK_SIZE - KR && tx < KR)
+    if (row < N.height - KR && col >= KR)
+      sN[ty + KR * 2][tx] = N.elements[(row + KR) * N.width + col - KR];
+    else
+      sN[ty + KR * 2][tx] = 0.f;
+  if (ty >= BLOCK_SIZE - KR && tx >= BLOCK_SIZE - KR)
+    if (row < N.height - KR && col < N.width - KR)
+      sN[ty + KR * 2][tx + KR * 2] =
+          N.elements[(row + KR) * N.width + col + KR];
+    else
+      sN[ty + KR * 2][tx + KR * 2] = 0.f;
 
   // Make sure everything is loaded into shared memory
   __syncthreads();
@@ -108,7 +134,7 @@ __global__ void ConvolutionKernel(Matrix M, Matrix N, Matrix P) {
       result += sM[j][i] * sN[ty + j][tx + i];
 
   // Fill P matrix with result
-  P.elements[col + row * N.width] = result;
+  P.elements[row * N.width + col] = result;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -127,7 +153,7 @@ int main(int argc, char** argv) {
   } else if (argc == 3) {
     if (atoi(argv[1]) == 0) compare = false;
     int siz = int_power(2, atoi(argv[2]));
-    M = AllocateMatrix(siz, siz, 0);
+    M = AllocateMatrix(KERNEL_SIZE, KERNEL_SIZE, 0);
     N = AllocateMatrix(siz, siz, 0);
     P = AllocateMatrix(siz, siz, 1);
   } else if (argc == 4 || argc == 5) {
@@ -146,8 +172,8 @@ int main(int argc, char** argv) {
   }
 
   printf("Kernel size: %dx%d\n", KERNEL_SIZE, KERNEL_SIZE);
-  printf("Block size: %dx%d\n", BLOCK_SIZE, BLOCK_SIZE);
-  printf("Dimension N[height,width]: %d  %d\n", N.height, N.width);
+  printf("Block size:  %dx%d\n", BLOCK_SIZE, BLOCK_SIZE);
+  printf("Image size:  %dx%d\n", N.height, N.width);
 
   // Convolution on the device
   ConvolutionOnDevice(M, N, P);
@@ -159,11 +185,12 @@ int main(int argc, char** argv) {
   // Check if the result is equivalent to the expected soluion
   if (compare) {
     int nDiffs = CompareResults(reference.elements, P.elements,
-                                P.width * P.height, 0.01f);
+                                P.width * P.height, 0.001f);
     if (nDiffs == 0)
       printf("Looks good.\n");
     else
-      printf("Doesn't look good: %d differences\n", nDiffs);
+      printf("Doesn't look good: %d/%d are different\n", nDiffs,
+             P.width * P.height);
   }
 
   if (argc == 5)
@@ -198,7 +225,8 @@ void ConvolutionOnDevice(const Matrix M, const Matrix N, Matrix P) {
 
   // Setup the execution configuration
   dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
-  dim3 dimGrid(P.width / BLOCK_SIZE, P.height / BLOCK_SIZE);
+  dim3 dimGrid((P.width + BLOCK_SIZE - 1) / BLOCK_SIZE,
+               (P.height + BLOCK_SIZE - 1) / BLOCK_SIZE);
 
   // Start inclusive timing
   cudaEventRecord(start_in, 0);
@@ -206,7 +234,6 @@ void ConvolutionOnDevice(const Matrix M, const Matrix N, Matrix P) {
   // Load M and N to the device
   CopyToDeviceMatrix(Md, M);
   CopyToDeviceMatrix(Nd, N);
-  // CopyToDeviceMatrix(Pd, P);
 
   // Start exclusive timing
   cudaEventRecord(start_ex, 0);
@@ -250,15 +277,15 @@ Matrix AllocateDeviceMatrix(const Matrix M) {
 }
 
 // Allocate a device matrix of dimensions height*width
-//	If init == 0, initialize to all zeroes.
-//	If init == 1, perform random initialization.
+//	If init == 0, perform random initialization
+//	If init == 1, allocate memory, but do not perform random initialization
 //  If init == 2, initialize matrix parameters, but do not allocate memory
 Matrix AllocateMatrix(int height, int width, int init) {
   Matrix M;
   M.width = M.pitch = width;
   M.height = height;
-  int size = M.width * M.height;
   M.elements = NULL;
+  int size = M.width * M.height;
 
   // don't allocate memory on option 2
   if (init == 2) return M;
@@ -268,12 +295,20 @@ Matrix AllocateMatrix(int height, int width, int init) {
   // Don't fill with random numbers on option 1
   if (init == 1) return M;
 
-  for (unsigned int i = 0; i < M.height * M.width; i++) {
-    M.elements[i] = (init == 0) ? (0.0f) : (rand() / (float)RAND_MAX);
-    if (rand() % 2) M.elements[i] = -M.elements[i];
-  }
+  for (unsigned int i = 0; i < M.height * M.width; i++)
+    M.elements[i] = 2.f * (rand() / (float)RAND_MAX) - 1.f;
 
   return M;
+}
+
+// Compare the data stored in two arrays on the host
+int CompareResults(float* A, float* B, int elements, float eps) {
+  int nDiffs = 0;
+  for (unsigned int i = 0; i < elements; i++) {
+    float error = abs(A[i] - B[i]);
+    if (error > eps) nDiffs++;
+  }
+  return nDiffs;
 }
 
 // Copy a host matrix to a device matrix.
@@ -303,16 +338,7 @@ void FreeMatrix(Matrix* M) {
   M->elements = NULL;
 }
 
-// compare the data stored in two arrays on the host
-int CompareResults(float* A, float* B, int elements, float eps) {
-  int nDiffs = 0;
-  for (unsigned int i = 0; i < elements; i++) {
-    float error = A[i] - B[i];
-    if (error > eps) nDiffs++;
-  }
-  return nDiffs;
-}
-
+// Read parameters from file
 bool ReadParams(int* params, int size, char* file_name) {
   ifstream ifile(file_name);
   int i = 0;
@@ -321,7 +347,7 @@ bool ReadParams(int* params, int size, char* file_name) {
   return (i == size) ? 1 : 0;
 }
 
-// Read a 16x16 floating point matrix in from file
+// Read a floating point matrix in from file
 int ReadFile(Matrix* M, char* file_name) {
   unsigned int data_read = M->height * M->width;
   std::ifstream ifile(file_name);
@@ -331,11 +357,38 @@ int ReadFile(Matrix* M, char* file_name) {
   return data_read;
 }
 
-// Write a 16x16 floating point matrix to file
+// Write a floating point matrix to file
 void WriteFile(Matrix M, char* file_name) {
   std::ofstream ofile(file_name);
   for (unsigned int i = 0; i < M.width * M.height; i++) ofile << M.elements[i];
   ofile.close();
+}
+
+// Print matrix to stdout
+void PrintMatrix(Matrix M) {
+  for (int j = 0; j < M.height; j++) {
+    for (int i = 0; i < M.width; i++) {
+      printf(" %5.2f", M.elements[j * M.width + i]);
+    }
+    printf("\n");
+  }
+  printf("\n");
+}
+
+// Print differences in matrices to stdout
+void PrintMatrixDifs(Matrix M, Matrix N, float eps) {
+  for (int j = 0; j < M.height; j++) {
+    for (int i = 0; i < M.width; i++) {
+      int ind = j * M.width + i;
+      float error = abs(M.elements[ind] - N.elements[ind]);
+      if (error < eps)
+        printf(" _");
+      else
+        printf(" 1");
+    }
+    printf("\n");
+  }
+  printf("\n");
 }
 
 // Take integer power
