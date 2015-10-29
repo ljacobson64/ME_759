@@ -47,7 +47,8 @@ using namespace std;
 
 extern "C" void computeGold(float*, const float*, const float*, unsigned int,
                             unsigned int);
-void ConvolutionOnDevice(const Matrix M, const Matrix N, Matrix P, float dur_max);
+void ConvolutionOnDevice(const Matrix M, const Matrix N, Matrix P,
+                         float dur_max);
 Matrix AllocateDeviceMatrix(const Matrix M);
 Matrix AllocateMatrix(int height, int width, int init);
 int CompareResults(float* A, float* B, int elements, float eps);
@@ -209,7 +210,8 @@ int main(int argc, char** argv) {
   if (nDiffs == 0)
     printf("Looks good.\n");
   else
-    printf("Doesn't look good: %d/%d are different\n", nDiffs, P.width * P.height);
+    printf("Doesn't look good: %d/%d are different\n", nDiffs,
+           P.width * P.height);
 
   printf("\n");
 
@@ -229,7 +231,8 @@ int main(int argc, char** argv) {
 ////////////////////////////////////////////////////////////////////////////////
 //! Run a simple test for CUDA
 ////////////////////////////////////////////////////////////////////////////////
-void ConvolutionOnDevice(const Matrix M, const Matrix N, Matrix P, float dur_max) {
+void ConvolutionOnDevice(const Matrix M, const Matrix N, Matrix P,
+                         float dur_max) {
   // Setup timing
   int num_runs = 0;
   float dur_ex_total = 0.f;
