@@ -2,9 +2,9 @@
 #include "math.h"
 #include "stdio.h"
 
-#define BLOCK_SIZE 1024
+#define BLOCK_SIZE 512
 
-__global__ void reductionDevice(double *d_in, double *d_out, int N) {
+__global__ void reductionDevice(double* d_in, double* d_out, int N) {
   // Setup shared memory
   extern __shared__ float s_data[];
   int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -29,9 +29,7 @@ __global__ void reductionDevice(double *d_in, double *d_out, int N) {
   }
 
   // Write the result for each block into d_out
-  if (threadIdx.x == 0) {
-    d_out[blockIdx.x] = s_data[0];
-  }
+  if (threadIdx.x == 0) d_out[blockIdx.x] = s_data[0];
 }
 
 void reductionHost(double* h_in, double* h_ref, int N) {
@@ -55,11 +53,20 @@ int main(int argc, char* argv[]) {
     printf("Usage: ./p2 <M> <N>\n");
     return 0;
   }
+  float dur_max = 1e-30;
 
-  // For N = 50,000,000 and BLOCK_SIZE = 1024
+  // Setup timing
+  int nruns_gpu = 0;
+  int nruns_cpu = 0;
+  float dur_ex, dur_in, dur_cpu;
+  float dur_ex_total = 0.f;
+  float dur_in_total = 0.f;
+  float dur_cpu_total = 0.f;
+
+  // For N = 50,000,000 and BLOCK_SIZE = 512:
   //   sizes[0] = 50,000,000
-  //   sizes[1] =     48,829
-  //   sizes[2] =         48
+  //   sizes[1] =     97,657
+  //   sizes[2] =        191
   //   sizes[3] =          1
   int sizes[4];
   sizes[0] = N;
@@ -67,14 +74,16 @@ int main(int argc, char* argv[]) {
   sizes[2] = (sizes[1] + BLOCK_SIZE - 1) / BLOCK_SIZE;
   sizes[3] = (sizes[2] + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
+  int shared_size = sizeof(double) * BLOCK_SIZE;
+
   // Allocate host arrays
-  double *h_in, *h_out, *h_ref;
+  double* h_in, *h_out, *h_ref;
   cudaMallocHost(&h_in, sizeof(double) * N);
   cudaMallocHost(&h_out, sizeof(double));
   cudaMallocHost(&h_ref, sizeof(double));
 
   // Allocate device arrays
-  double *d_0, *d_1, *d_2, *d_3;
+  double* d_0, *d_1, *d_2, *d_3;
   cudaMalloc(&d_0, sizeof(double) * sizes[0]);
   cudaMalloc(&d_1, sizeof(double) * sizes[1]);
   cudaMalloc(&d_2, sizeof(double) * sizes[2]);
@@ -85,32 +94,83 @@ int main(int argc, char* argv[]) {
   for (int i = 0; i < N; i++)
     h_in[i] = ((double)rand() / RAND_MAX - 0.5f) * 2 * M;
 
-  // Copy host array to device
-  cudaMemcpy(d_0, h_in, N * sizeof(double), cudaMemcpyHostToDevice);
+  while (dur_in_total < dur_max) {
+    nruns_gpu++;
 
-  // Perform reduction on device
-  reductionDevice <<<sizes[1], BLOCK_SIZE, sizeof(double) * BLOCK_SIZE>>>
-      (d_0, d_1, sizes[0]);
-  reductionDevice <<<sizes[2], BLOCK_SIZE, sizeof(double) * BLOCK_SIZE>>>
-      (d_1, d_2, sizes[1]);
-  reductionDevice <<<sizes[3], BLOCK_SIZE, sizeof(double) * BLOCK_SIZE>>>
-      (d_2, d_3, sizes[2]);
+    // Setup timing
+    cudaEvent_t start_ex, end_ex, start_in, end_in;
+    cudaEventCreate(&start_ex);
+    cudaEventCreate(&end_ex);
+    cudaEventCreate(&start_in);
+    cudaEventCreate(&end_in);
 
-  // Copy device array back to host
-  cudaMemcpy(h_out, d_3, sizeof(double), cudaMemcpyDeviceToHost);
+    // Copy host array to device
+    cudaEventRecord(start_in, 0);
+    cudaMemcpy(d_0, h_in, N * sizeof(double), cudaMemcpyHostToDevice);
 
-  // Perform reduction on host
-  reductionHost(h_in, h_ref, N);
+    // Perform reduction on device
+    cudaEventRecord(start_ex, 0);
+    reductionDevice <<<sizes[1], BLOCK_SIZE, shared_size>>>
+        (d_0, d_1, sizes[0]);
+    reductionDevice <<<sizes[2], BLOCK_SIZE, shared_size>>>
+        (d_1, d_2, sizes[1]);
+    reductionDevice <<<sizes[3], BLOCK_SIZE, shared_size>>>
+        (d_2, d_3, sizes[2]);
+    cudaEventRecord(end_ex, 0);
+    cudaEventSynchronize(end_ex);
+
+    // Copy device array back to host
+    cudaMemcpy(h_out, d_3, sizeof(double), cudaMemcpyDeviceToHost);
+    cudaEventRecord(end_in, 0);
+    cudaEventSynchronize(end_in);
+
+    // Calculate durations
+    cudaEventElapsedTime(&dur_ex, start_ex, end_ex);
+    cudaEventElapsedTime(&dur_in, start_in, end_in);
+    dur_ex_total += dur_ex;
+    dur_in_total += dur_in;
+  }
+
+  while (dur_cpu_total < dur_max) {
+    nruns_cpu++;
+
+    // Setup timing
+    cudaEvent_t start_cpu, end_cpu;
+    cudaEventCreate(&start_cpu);
+    cudaEventCreate(&end_cpu);
+
+    // Perform reduction on host
+    cudaEventRecord(start_cpu, 0);
+    reductionHost(h_in, h_ref, N);
+    cudaEventRecord(end_cpu, 0);
+    cudaEventSynchronize(end_cpu);
+
+    // Calculate durations
+    cudaEventElapsedTime(&dur_cpu, start_cpu, end_cpu);
+    dur_cpu_total += dur_cpu;
+  }
+
+  dur_ex = dur_ex_total / nruns_gpu;
+  dur_in = dur_in_total / nruns_gpu;
+  dur_cpu = dur_cpu_total / nruns_cpu;
 
   // Compare device and host results
   double eps = (double)M * 2 * 0.001f;
   bool testPassed = checkResults(h_out, h_ref, eps);
-  printf("Device result: %20.14f\n", *h_out);
-  printf("Host result:   %20.14f\n", *h_ref);
   if (testPassed)
     printf("Test PASSED\n");
   else
     printf("Test FAILED\n");
+
+  // Print stuff
+  printf("GPU result: %20.14f\n", *h_out);
+  printf("CPU result: %20.14f\n", *h_ref);
+  printf("Num runs GPU: %10d\n", nruns_gpu);
+  printf("Num runs CPU: %10d\n", nruns_cpu);
+  printf("GPU execution time (exclusive): %12.6f\n", dur_ex);
+  printf("GPU execution time (inclusive): %12.6f\n", dur_in);
+  printf("CPU execution time:             %12.6f\n", dur_cpu);
+  printf("\n");
 
   // Free arrays
   cudaFree(h_in);
