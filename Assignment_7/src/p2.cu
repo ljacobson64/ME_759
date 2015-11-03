@@ -4,13 +4,16 @@
 
 #define BLOCK_SIZE 1024
 
-__global__ void reductionDevice(double* d_in, double* d_out, int N) {
+__global__ void reductionDevice(double *d_in, double *d_out, int N) {
   // Setup shared memory
   extern __shared__ float s_data[];
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
 
   // Load global memory into shared memory
-  int i = blockIdx.x * blockDim.x + threadIdx.x;
-  s_data[threadIdx.x] = d_in[i];
+  if (i < N)
+    s_data[threadIdx.x] = d_in[i];
+  else
+    s_data[threadIdx.x] = 0.f;
 
   // Make sure all the memory in a block is loaded before continuing
   __syncthreads();
@@ -26,13 +29,21 @@ __global__ void reductionDevice(double* d_in, double* d_out, int N) {
   }
 
   // Write the result for each block into d_out
-  if (threadIdx.x == 0) d_out[blockIdx.x] = s_data[0];
+  if (threadIdx.x == 0) {
+    d_out[blockIdx.x] = s_data[0];
+  }
 }
 
 void reductionHost(double* h_in, double* h_ref, int N) {
   double result = 0.f;
   for (int i = 0; i < N; i++) result += h_in[i];
   *h_ref = result;
+}
+
+bool checkResults(double* h_out, double* h_ref, double eps) {
+  double delta = abs(*h_out - *h_ref);
+  if (delta > eps) return false;
+  return true;
 }
 
 int main(int argc, char* argv[]) {
@@ -60,7 +71,7 @@ int main(int argc, char* argv[]) {
   double *h_in, *h_out, *h_ref;
   cudaMallocHost(&h_in, sizeof(double) * N);
   cudaMallocHost(&h_out, sizeof(double));
-  h_ref = (double*)malloc(sizeof(double) * N);
+  cudaMallocHost(&h_ref, sizeof(double));
 
   // Allocate device arrays
   double *d_0, *d_1, *d_2, *d_3;
@@ -91,14 +102,24 @@ int main(int argc, char* argv[]) {
   // Perform reduction on host
   reductionHost(h_in, h_ref, N);
 
+  // Compare device and host results
+  double eps = (double)M * 2 * 0.001f;
+  bool testPassed = checkResults(h_out, h_ref, eps);
+  printf("Device result: %20.14f\n", *h_out);
+  printf("Host result:   %20.14f\n", *h_ref);
+  if (testPassed)
+    printf("Test PASSED\n");
+  else
+    printf("Test FAILED\n");
+
   // Free arrays
   cudaFree(h_in);
   cudaFree(h_out);
+  cudaFree(h_ref);
   cudaFree(d_0);
   cudaFree(d_1);
   cudaFree(d_2);
   cudaFree(d_3);
-  free(h_ref);
 
   return 0;
 }
