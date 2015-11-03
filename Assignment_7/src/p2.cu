@@ -3,11 +3,13 @@
 #include "stdio.h"
 
 #define BLOCK_SIZE 512
+#define MAX_GRID_DIM 65535
 
 __global__ void reductionDevice(double* d_in, double* d_out, int N) {
   // Setup shared memory
   extern __shared__ float s_data[];
-  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  int blockId = blockIdx.y * gridDim.x + blockIdx.x;
+  int i = blockId * blockDim.x + threadIdx.x;
 
   // Load global memory into shared memory
   if (i < N)
@@ -29,7 +31,7 @@ __global__ void reductionDevice(double* d_in, double* d_out, int N) {
   }
 
   // Write the result for each block into d_out
-  if (threadIdx.x == 0) d_out[blockIdx.x] = s_data[0];
+  if (threadIdx.x == 0 && i < N) d_out[blockId] = s_data[0];
 }
 
 void reductionHost(double* h_in, double* h_ref, int N) {
@@ -63,16 +65,22 @@ int main(int argc, char* argv[]) {
   float dur_in_total = 0.f;
   float dur_cpu_total = 0.f;
 
-  // For N = 50,000,000 and BLOCK_SIZE = 512:
-  //   sizes[0] = 50,000,000
-  //   sizes[1] =     97,657
-  //   sizes[2] =        191
-  //   sizes[3] =          1
-  int sizes[4];
-  sizes[0] = N;
-  sizes[1] = (sizes[0] + BLOCK_SIZE - 1) / BLOCK_SIZE;
-  sizes[2] = (sizes[1] + BLOCK_SIZE - 1) / BLOCK_SIZE;
-  sizes[3] = (sizes[2] + BLOCK_SIZE - 1) / BLOCK_SIZE;
+  // Setup grid
+  int lengths[4];
+  lengths[0] = N;
+  for (int i = 1; i < 4; i++)
+    lengths[i] = (lengths[i - 1] + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+  dim3 dimGrid[3];
+  for (int i = 0; i < 3; i++) {
+    if (lengths[i + 1] > MAX_GRID_DIM) {
+      dimGrid[i].x = MAX_GRID_DIM;
+      dimGrid[i].y = (lengths[i + 1] + MAX_GRID_DIM - 1) / MAX_GRID_DIM;
+    } else {
+      dimGrid[i].x = lengths[i + 1];
+      dimGrid[i].y = 1;
+    }
+  }
 
   int shared_size = sizeof(double) * BLOCK_SIZE;
 
@@ -84,10 +92,10 @@ int main(int argc, char* argv[]) {
 
   // Allocate device arrays
   double* d_0, *d_1, *d_2, *d_3;
-  cudaMalloc(&d_0, sizeof(double) * sizes[0]);
-  cudaMalloc(&d_1, sizeof(double) * sizes[1]);
-  cudaMalloc(&d_2, sizeof(double) * sizes[2]);
-  cudaMalloc(&d_3, sizeof(double) * sizes[3]);
+  cudaMalloc(&d_0, sizeof(double) * lengths[0]);
+  cudaMalloc(&d_1, sizeof(double) * lengths[1]);
+  cudaMalloc(&d_2, sizeof(double) * lengths[2]);
+  cudaMalloc(&d_3, sizeof(double) * lengths[3]);
 
   // Fill host array with random numbers
   srand(73);
@@ -110,12 +118,12 @@ int main(int argc, char* argv[]) {
 
     // Perform reduction on device
     cudaEventRecord(start_ex, 0);
-    reductionDevice <<<sizes[1], BLOCK_SIZE, shared_size>>>
-        (d_0, d_1, sizes[0]);
-    reductionDevice <<<sizes[2], BLOCK_SIZE, shared_size>>>
-        (d_1, d_2, sizes[1]);
-    reductionDevice <<<sizes[3], BLOCK_SIZE, shared_size>>>
-        (d_2, d_3, sizes[2]);
+    reductionDevice <<<dimGrid[0], BLOCK_SIZE, shared_size>>>
+        (d_0, d_1, lengths[0]);
+    reductionDevice <<<dimGrid[1], BLOCK_SIZE, shared_size>>>
+        (d_1, d_2, lengths[1]);
+    reductionDevice <<<dimGrid[2], BLOCK_SIZE, shared_size>>>
+        (d_2, d_3, lengths[2]);
     cudaEventRecord(end_ex, 0);
     cudaEventSynchronize(end_ex);
 
@@ -129,6 +137,7 @@ int main(int argc, char* argv[]) {
     cudaEventElapsedTime(&dur_in, start_in, end_in);
     dur_ex_total += dur_ex;
     dur_in_total += dur_in;
+    if (dur_in_total == 0.f) break;
   }
 
   while (dur_cpu_total < dur_max) {
@@ -148,6 +157,7 @@ int main(int argc, char* argv[]) {
     // Calculate durations
     cudaEventElapsedTime(&dur_cpu, start_cpu, end_cpu);
     dur_cpu_total += dur_cpu;
+    if (dur_cpu_total == 0.f) break;
   }
 
   dur_ex = dur_ex_total / nruns_gpu;
@@ -163,10 +173,16 @@ int main(int argc, char* argv[]) {
     printf("Test FAILED\n");
 
   // Print stuff
-  printf("GPU result: %20.14f\n", *h_out);
-  printf("CPU result: %20.14f\n", *h_ref);
-  printf("Num runs GPU: %10d\n", nruns_gpu);
-  printf("Num runs CPU: %10d\n", nruns_cpu);
+  printf("N: %d\n", N);
+  printf("M: %d\n", M);
+  printf("Block size: %d\n", BLOCK_SIZE);
+  printf("gridDim[0]: %dx%d\n", dimGrid[0].y, dimGrid[0].x);
+  printf("gridDim[1]: %dx%d\n", dimGrid[1].y, dimGrid[1].x);
+  printf("gridDim[2]: %dx%d\n", dimGrid[2].y, dimGrid[2].x);
+  printf("Num runs GPU: %d\n", nruns_gpu);
+  printf("Num runs CPU: %d\n", nruns_cpu);
+  printf("GPU result: %24.14f\n", *h_out);
+  printf("CPU result: %24.14f\n", *h_ref);
   printf("GPU execution time (exclusive): %12.6f\n", dur_ex);
   printf("GPU execution time (inclusive): %12.6f\n", dur_in);
   printf("CPU execution time:             %12.6f\n", dur_cpu);
