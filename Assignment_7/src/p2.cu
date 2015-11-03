@@ -2,7 +2,7 @@
 #include "math.h"
 #include "stdio.h"
 
-#define BLOCK_SIZE 1024;
+#define BLOCK_SIZE 1024
 
 __global__ void reductionDevice(double* d_in, double* d_out, int N) {
   // Setup shared memory
@@ -26,18 +26,16 @@ __global__ void reductionDevice(double* d_in, double* d_out, int N) {
   }
 
   // Write the result for each block into d_out
-  if (threadIdx.x == 0)
-    d_out[blockIdx.x] = s_data[0];
+  if (threadIdx.x == 0) d_out[blockIdx.x] = s_data[0];
 }
 
 void reductionHost(double* h_in, double* h_ref, int N) {
   double result = 0.f;
-  for (int i = 0; i < N; i++)
-    result += h_in[i];
+  for (int i = 0; i < N; i++) result += h_in[i];
   *h_ref = result;
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
   int N, M;
   if (argc == 3) {
     N = atoi(argv[1]);
@@ -47,7 +45,7 @@ int main(int argc, char *argv[]) {
     return 0;
   }
 
-  // For N = 50,000,000 and BLOCK_SIZE = 1024:
+  // For N = 50,000,000 and BLOCK_SIZE = 1024
   //   sizes[0] = 50,000,000
   //   sizes[1] =     48,829
   //   sizes[2] =         48
@@ -62,7 +60,7 @@ int main(int argc, char *argv[]) {
   double *h_in, *h_out, *h_ref;
   cudaMallocHost(&h_in, sizeof(double) * N);
   cudaMallocHost(&h_out, sizeof(double));
-  h_ref = (double *)malloc(N);
+  h_ref = (double*)malloc(sizeof(double) * N);
 
   // Allocate device arrays
   double *d_0, *d_1, *d_2, *d_3;
@@ -74,7 +72,7 @@ int main(int argc, char *argv[]) {
   // Fill host array with random numbers
   srand(73);
   for (int i = 0; i < N; i++)
-    h_data[i] = ((double)rand() / RAND_MAX - 0.5f) * 2 * M;
+    h_in[i] = ((double)rand() / RAND_MAX - 0.5f) * 2 * M;
 
   // Copy host array to device
   cudaMemcpy(d_0, h_in, N * sizeof(double), cudaMemcpyHostToDevice);
