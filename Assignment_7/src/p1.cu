@@ -13,8 +13,11 @@ int main(int argc, char *argv[]) {
     printf("Usage: ./p1 <version> <log2N_min> <log2N_max> <time>\n");
     printf("Version 0: Copy non-pinned memory from host to device\n");
     printf("Version 1: Copy pinned memory from host to device\n");
-    printf("Version 2: Copy non-pinned memory from host to device and back again\n");
-    printf("Version 3: Copy pinned memory from host to device and back again\n");
+    printf(
+        "Version 2: Copy non-pinned memory from host to device and back "
+        "again\n");
+    printf(
+        "Version 3: Copy pinned memory from host to device and back again\n");
     printf("Time in ms\n");
     return 0;
   }
@@ -33,10 +36,10 @@ int main(int argc, char *argv[]) {
   // Allocate device resources
   int *d1, *d2;
   cudaMalloc(&d1, N_max);
-  if (version == 2 || version == 3)
-    cudaMalloc(&d2, N_max);
+  if (version == 2 || version == 3) cudaMalloc(&d2, N_max);
 
-  printf("%8s %8s %12s %8s %12s\n", "Version", "log2N", "Bytes", "Runs", "Time");
+  printf("%8s %8s %12s %8s %12s\n", "Version", "log2N", "Bytes", "Runs",
+         "Time");
   int log2N = log2N_min;
   int N = N_min;
 
