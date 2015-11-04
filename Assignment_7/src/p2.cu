@@ -5,46 +5,54 @@
 #include "stdlib.h"
 
 #define BLOCK_SIZE 512
-#define DOUBLE_BLOCK 1024
-#define MAX_GRID_DIM 65535
+#define ELEMS_PER_THREAD 32
 
-__device__ void warpReduce(volatile double* s_data, int t) {
-  s_data[t] += s_data[t + 32];
-  s_data[t] += s_data[t + 16];
-  s_data[t] += s_data[t + 8];
-  s_data[t] += s_data[t + 4];
-  s_data[t] += s_data[t + 2];
-  s_data[t] += s_data[t + 1];
+template <unsigned int blockSize>
+__device__ void warpReduce(volatile double* s_data, unsigned int t) {
+  if (blockSize >= 64) s_data[t] += s_data[t + 32];
+  if (blockSize >= 32) s_data[t] += s_data[t + 16];
+  if (blockSize >= 16) s_data[t] += s_data[t + 8];
+  if (blockSize >= 8) s_data[t] += s_data[t + 4];
+  if (blockSize >= 4) s_data[t] += s_data[t + 2];
+  if (blockSize >= 2) s_data[t] += s_data[t + 1];
 }
 
+template <unsigned int blockSize>
 __global__ void reductionDevice(double* d_in, double* d_out, unsigned int N) {
   extern __shared__ double s_data[];
 
   // Indexing
-  unsigned int blockId = blockIdx.y * gridDim.x + blockIdx.x;
-  unsigned int i = blockId * (blockDim.x * 2) + threadIdx.x;
-  unsigned int gridSize = blockDim.x * 2 * gridDim.x;
+  unsigned int t = threadIdx.x;
+  unsigned int i = blockIdx.x * (blockSize * 2) + t;
+  unsigned int gridSize = blockSize * 2 * gridDim.x;
 
-  // Each thread loads 2 values into shared memory and adds them
-  if (i + blockDim.x < N)
-    s_data[threadIdx.x] = d_in[i] + d_in[i + blockDim.x];
-  else if (i < N)
-    s_data[threadIdx.x] = d_in[i];
-  else
-    s_data[threadIdx.x] = 0.f;
+  // Load some elements into shared memory
+  s_data[t] = 0.f;
+  while (i + blockSize < N) {
+    s_data[t] += d_in[i] + d_in[i + blockDim.x];
+    i += gridSize;
+  }
+  if (i < N) s_data[t] += d_in[i];
   __syncthreads();
 
   // Unroll the loop
-  if (threadIdx.x < 256) s_data[threadIdx.x] += s_data[threadIdx.x + 256];
-  __syncthreads();
-  if (threadIdx.x < 128) s_data[threadIdx.x] += s_data[threadIdx.x + 128];
-  __syncthreads();
-  if (threadIdx.x < 64) s_data[threadIdx.x] += s_data[threadIdx.x + 64];
-  __syncthreads();
-  if (threadIdx.x < 32) warpReduce(s_data, threadIdx.x);
+  if (blockSize >= 512) {
+    if (t < 256) s_data[t] += s_data[t + 256];
+    __syncthreads();
+  }
+  if (blockSize >= 256) {
+    if (t < 128) s_data[t] += s_data[t + 128];
+    __syncthreads();
+  }
+  if (blockSize >= 128) {
+    if (t < 64) s_data[t] += s_data[t + 64];
+    __syncthreads();
+  }
+
+  if (t < 32) warpReduce<blockSize>(s_data, t);
 
   // Write the result for each block into d_out
-  if (threadIdx.x == 0 && i < N) d_out[blockId] = s_data[0];
+  if (t == 0) d_out[blockIdx.x] = s_data[0];
 }
 
 void reductionHost(double* h_in, double* h_ref, unsigned int N) {
@@ -124,7 +132,8 @@ int main(int argc, char* argv[]) {
   {
     unsigned int length = N;
     while (length > 1) {
-      length = (length + DOUBLE_BLOCK - 1) / DOUBLE_BLOCK;
+      length = (length + (BLOCK_SIZE * ELEMS_PER_THREAD) - 1) /
+               (BLOCK_SIZE * ELEMS_PER_THREAD);
       tree_depth++;
     }
   }
@@ -133,19 +142,18 @@ int main(int argc, char* argv[]) {
   unsigned int lengths[tree_depth + 1];
   lengths[0] = N;
   for (int i = 1; i < tree_depth + 1; i++)
-    lengths[i] = (lengths[i - 1] + DOUBLE_BLOCK - 1) / DOUBLE_BLOCK;
+    lengths[i] = (lengths[i - 1] + (BLOCK_SIZE * ELEMS_PER_THREAD) - 1) /
+                 (BLOCK_SIZE * ELEMS_PER_THREAD);
 
   // Setup grid
+  dim3 dimBlock[tree_depth];
   dim3 dimGrid[tree_depth];
   for (int i = 0; i < tree_depth; i++) {
-    if (lengths[i + 1] > MAX_GRID_DIM) {
-      dimGrid[i].x = MAX_GRID_DIM;
-      dimGrid[i].y = (lengths[i + 1] + MAX_GRID_DIM - 1) / MAX_GRID_DIM;
-    } else {
-      dimGrid[i].x = lengths[i + 1];
-      dimGrid[i].y = 1;
-    }
+    dimBlock[i].x = BLOCK_SIZE;
+    dimGrid[i].x = lengths[i + 1];
   }
+  for (int i = BLOCK_SIZE; i > 0; i >>= 1)
+    if (lengths[tree_depth] < i) dimBlock[tree_depth - 1].x = i;
 
   unsigned int shared_size = sizeof(double) * BLOCK_SIZE;
 
@@ -181,7 +189,7 @@ int main(int argc, char* argv[]) {
     // Perform reduction on device
     cudaEventRecord(start_ex, 0);
     for (int i = 0; i < tree_depth; i++)
-      reductionDevice <<<dimGrid[i], BLOCK_SIZE, shared_size>>>
+      reductionDevice<BLOCK_SIZE> <<<dimGrid[i], dimBlock[i], shared_size>>>
           (d_arr[i], d_arr[i + 1], lengths[i]);
     cudaEventRecord(end_ex, 0);
     cudaEventSynchronize(end_ex);
@@ -238,12 +246,17 @@ int main(int argc, char* argv[]) {
   // Print stuff
   printf("N: %u\n", N);
   printf("M: %u\n", M);
-  printf("Block size: %d\n", BLOCK_SIZE);
+  printf("Elements per thread: %d\n", ELEMS_PER_THREAD);
   printf("Tree depth: %d\n", tree_depth);
-  printf("gridDims: ");
-  for (int i = 0; i < tree_depth - 1; i++)
-    printf("%dx%d, ", dimGrid[i].y, dimGrid[i].x);
-  printf("%dx%d\n", dimGrid[tree_depth - 1].y, dimGrid[tree_depth - 1].x);
+  printf("Block sizes: ");
+  for (int i = 0; i < tree_depth - 1; i++) printf("%d, ", dimBlock[i].x);
+  printf("%d\n", dimBlock[tree_depth - 1].x);
+  printf("Grid sizes: ");
+  for (int i = 0; i < tree_depth - 1; i++) printf("%d, ", dimGrid[i].x);
+  printf("%d\n", dimGrid[tree_depth - 1].x);
+  printf("GPU array lengths: ");
+  for (int i = 0; i < tree_depth; i++) printf("%d, ", lengths[i]);
+  printf("%d\n", lengths[tree_depth]);
   printf("GPU result: %24.14f\n", *h_out);
   printf("CPU result: %24.14f\n", *h_ref);
   printf("Timing results %12s %12s %8s\n", "Average", "Minimum", "Num_runs");
