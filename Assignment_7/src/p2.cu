@@ -94,7 +94,7 @@ int main(int argc, char* argv[]) {
   for (int i = 1; i < TREE_DEPTH + 1; i++)
     lengths[i] = (lengths[i - 1] + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-  dim3 dimGrid[3];
+  dim3 dimGrid[TREE_DEPTH];
   for (int i = 0; i < TREE_DEPTH; i++) {
     if (lengths[i + 1] > MAX_GRID_DIM) {
       dimGrid[i].x = MAX_GRID_DIM;
@@ -113,10 +113,9 @@ int main(int argc, char* argv[]) {
   double* h_ref = AllocateHostArray(sizeof(double));
 
   // Allocate device arrays
-  double* d_0 = AllocateDeviceArray(sizeof(double) * lengths[0]);
-  double* d_1 = AllocateDeviceArray(sizeof(double) * lengths[1]);
-  double* d_2 = AllocateDeviceArray(sizeof(double) * lengths[2]);
-  double* d_3 = AllocateDeviceArray(sizeof(double) * lengths[3]);
+  double* d_arr[TREE_DEPTH + 1];
+  for (int i = 0; i < TREE_DEPTH + 1; i++)
+    d_arr[i] = AllocateDeviceArray(sizeof(double) * lengths[i]);
 
   // Fill host array with random numbers
   srand(73);
@@ -135,21 +134,18 @@ int main(int argc, char* argv[]) {
 
     // Copy host array to device
     cudaEventRecord(start_in, 0);
-    cudaMemcpy(d_0, h_in, N * sizeof(double), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_arr[0], h_in, N * sizeof(double), cudaMemcpyHostToDevice);
 
     // Perform reduction on device
     cudaEventRecord(start_ex, 0);
-    reductionDevice <<<dimGrid[0], BLOCK_SIZE, shared_size>>>
-        (d_0, d_1, lengths[0]);
-    reductionDevice <<<dimGrid[1], BLOCK_SIZE, shared_size>>>
-        (d_1, d_2, lengths[1]);
-    reductionDevice <<<dimGrid[2], BLOCK_SIZE, shared_size>>>
-        (d_2, d_3, lengths[2]);
+    for (int i = 0; i < TREE_DEPTH; i++)
+      reductionDevice <<<dimGrid[i], BLOCK_SIZE, shared_size>>>
+          (d_arr[i], d_arr[i + 1], lengths[i]);
     cudaEventRecord(end_ex, 0);
     cudaEventSynchronize(end_ex);
 
     // Copy device array back to host
-    cudaMemcpy(h_out, d_3, sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_out, d_arr[3], sizeof(double), cudaMemcpyDeviceToHost);
     cudaEventRecord(end_in, 0);
     cudaEventSynchronize(end_in);
 
@@ -214,10 +210,7 @@ int main(int argc, char* argv[]) {
   cudaFree(h_in);
   cudaFree(h_out);
   cudaFree(h_ref);
-  cudaFree(d_0);
-  cudaFree(d_1);
-  cudaFree(d_2);
-  cudaFree(d_3);
+  for (int i = 0; i < TREE_DEPTH + 1; i++) cudaFree(d_arr[i]);
 
   return 0;
 }
