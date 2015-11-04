@@ -5,18 +5,21 @@
 #include "stdlib.h"
 
 #define BLOCK_SIZE 512
+#define DOUBLE_BLOCK 1024
 #define MAX_GRID_DIM 65535
 
 __global__ void reductionDevice(double* d_in, double* d_out, int N) {
   extern __shared__ double s_data[];
 
   // Indexing
-  unsigned int bid = blockIdx.y * gridDim.x + blockIdx.x;
-  unsigned int tid = bid * blockDim.x + threadIdx.x;
+  unsigned int blockId = blockIdx.y * gridDim.x + blockIdx.x;
+  unsigned int i = blockId * (blockDim.x * 2) + threadIdx.x;
 
-  // Load data into shared memory
-  if (tid < N)
-    s_data[threadIdx.x] = d_in[tid];
+  // Each thread loads 2 values into shared memory and adds them
+  if (i + blockDim.x < N)
+    s_data[threadIdx.x] = d_in[i] + d_in[i + blockDim.x];
+  else if (i < N)
+    s_data[threadIdx.x] = d_in[i];
   else
     s_data[threadIdx.x] = 0.f;
 
@@ -33,25 +36,30 @@ __global__ void reductionDevice(double* d_in, double* d_out, int N) {
   }
 
   // Write the result for each block into d_out
-  if (threadIdx.x == 0 && tid < N) d_out[bid] = s_data[0];
+  if (threadIdx.x == 0 && i < N) d_out[blockId] = s_data[0];
 }
 
 void exitUsage() {
-  printf("Usage: ./p2 <M> <N>\n");
+  printf("Usage: ./p2 [<M> <N> [<dur_max>]]\n");
   exit(EXIT_SUCCESS);
 }
 
-void parseInput(int argc, char* argv[], unsigned int &N, unsigned int &M) {
-  if (argc != 3) exitUsage();
-  char *endptr;
-  long Nlong = strtol(argv[1], &endptr, 10);
-  if (!*argv[1] || *endptr) exitUsage();
-  long Mlong = strtol(argv[2], &endptr, 10);
-  if (!*argv[2] || *endptr) exitUsage();
-  if (Nlong > UINT_MAX) exitUsage();
-  if (Mlong > UINT_MAX) exitUsage();
-  N = (unsigned int)Nlong;
-  M = (unsigned int)Mlong;
+void parseInput(int argc, char* argv[], unsigned int &N, unsigned int &M,
+                float &dur_max) {
+  if (argc == 1) {
+    N = 50000000;
+    M = 5;
+    dur_max = 1000.f;
+    return;
+  }
+  if (argc != 3 && argc != 4) exitUsage();
+  if (sscanf(argv[1], "%u", &N) != 1) exitUsage();
+  if (sscanf(argv[2], "%u", &M) != 1) exitUsage();
+  if (argc == 3) {
+    dur_max = 1000.f;
+    return;
+  }
+  if (sscanf(argv[3], "%f", &dur_max) != 1) exitUsage();
 }
 
 void reductionHost(double* h_in, double* h_ref, int N) {
@@ -88,8 +96,8 @@ double* AllocateDeviceArray(int size) {
 
 int main(int argc, char* argv[]) {
   unsigned int N, M;
-  parseInput(argc, argv, N, M);
-  float dur_max = 1000.f;
+  float dur_max;
+  parseInput(argc, argv, N, M, dur_max);
 
   // Setup timing
   int nruns_gpu = 0;
@@ -106,7 +114,7 @@ int main(int argc, char* argv[]) {
   int tree_depth = 0;
   int length = N;
   while (length > 1) {
-    length = (length + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    length = (length + DOUBLE_BLOCK - 1) / DOUBLE_BLOCK;
     tree_depth++;
   }
 
@@ -114,7 +122,7 @@ int main(int argc, char* argv[]) {
   int lengths[tree_depth + 1];
   lengths[0] = N;
   for (int i = 1; i < tree_depth + 1; i++)
-    lengths[i] = (lengths[i - 1] + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    lengths[i] = (lengths[i - 1] + DOUBLE_BLOCK - 1) / DOUBLE_BLOCK;
 
   // Setup grid
   dim3 dimGrid[tree_depth];
