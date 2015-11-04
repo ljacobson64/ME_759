@@ -18,7 +18,7 @@ __device__ void warpReduce(volatile double* s_data, unsigned int t) {
 }
 
 template <unsigned int blockSize>
-__global__ void reductionDevice(double* d_in, double* d_out, unsigned int N) {
+__global__ void reductionKernel(double* d_in, double* d_out, unsigned int N) {
   extern __shared__ double s_data[];
 
   // Indexing
@@ -55,10 +55,87 @@ __global__ void reductionDevice(double* d_in, double* d_out, unsigned int N) {
   if (t == 0) d_out[blockIdx.x] = s_data[0];
 }
 
-void reductionHost(double* h_in, double* h_ref, unsigned int N) {
+void reductionOnDevice(double* h_in, double* h_out, double** d_arr,
+                       unsigned int N, int tree_depth, unsigned int* lengths,
+                       dim3* dimBlock, dim3* dimGrid, unsigned int s_size,
+                       float& dur_ex, float& dur_in) {
+  // Setup timing
+  cudaEvent_t start_ex, end_ex, start_in, end_in;
+  cudaEventCreate(&start_ex);
+  cudaEventCreate(&end_ex);
+  cudaEventCreate(&start_in);
+  cudaEventCreate(&end_in);
+
+  // Copy host array to device
+  cudaEventRecord(start_in, 0);
+  cudaMemcpy(d_arr[0], h_in, N * sizeof(double), cudaMemcpyHostToDevice);
+
+  // Perform reduction on device
+  switch (tree_depth) {
+    // The long switch statement unrolling the block sizes turned out to be
+    // slower than just leaving them all as BLOCK_SIZE
+    case 1:
+      cudaEventRecord(start_ex, 0);
+      reductionKernel<BLOCK_SIZE> <<<dimGrid[0], dimBlock[0], s_size>>>
+          (d_arr[0], d_arr[1], lengths[0]);
+      cudaEventRecord(end_ex, 0);
+      cudaEventSynchronize(end_ex);
+      break;
+    case 2:
+      cudaEventRecord(start_ex, 0);
+      reductionKernel<BLOCK_SIZE> <<<dimGrid[0], dimBlock[0], s_size>>>
+          (d_arr[0], d_arr[1], lengths[0]);
+      reductionKernel<BLOCK_SIZE> <<<dimGrid[1], dimBlock[1], s_size>>>
+          (d_arr[1], d_arr[2], lengths[1]);
+      cudaEventRecord(end_ex, 0);
+      cudaEventSynchronize(end_ex);
+      break;
+    case 3:
+      cudaEventRecord(start_ex, 0);
+      reductionKernel<BLOCK_SIZE> <<<dimGrid[0], dimBlock[0], s_size>>>
+          (d_arr[0], d_arr[1], lengths[0]);
+      reductionKernel<BLOCK_SIZE> <<<dimGrid[1], dimBlock[1], s_size>>>
+          (d_arr[1], d_arr[2], lengths[1]);
+      reductionKernel<BLOCK_SIZE> <<<dimGrid[2], dimBlock[2], s_size>>>
+          (d_arr[2], d_arr[3], lengths[2]);
+      cudaEventRecord(end_ex, 0);
+      cudaEventSynchronize(end_ex);
+      break;
+  }
+
+  // Copy device array back to host
+  cudaMemcpy(h_out, d_arr[tree_depth], sizeof(double), cudaMemcpyDeviceToHost);
+  cudaEventRecord(end_in, 0);
+  cudaEventSynchronize(end_in);
+
+  // Calculate durations
+  cudaEventElapsedTime(&dur_ex, start_ex, end_ex);
+  cudaEventElapsedTime(&dur_in, start_in, end_in);
+}
+
+void reductionOnHost(double* h_in, double* h_ref, unsigned int N,
+                     float& dur_cpu) {
+  // Setup timing
+  cudaEvent_t start_cpu, end_cpu;
+  cudaEventCreate(&start_cpu);
+  cudaEventCreate(&end_cpu);
+
+  // Perform reduction on host
+  cudaEventRecord(start_cpu, 0);
   double result = 0.f;
   for (unsigned int i = 0; i < N; i++) result += h_in[i];
   *h_ref = result;
+  cudaEventRecord(end_cpu, 0);
+  cudaEventSynchronize(end_cpu);
+
+  // Calculate duration
+  cudaEventElapsedTime(&dur_cpu, start_cpu, end_cpu);
+}
+
+bool checkResults(double* h_out, double* h_ref, double eps) {
+  double delta = abs(*h_out - *h_ref);
+  if (delta > eps) return false;
+  return true;
 }
 
 void exitUsage() {
@@ -85,13 +162,7 @@ void parseInput(int argc, char* argv[], unsigned int& N, unsigned int& M,
   dur_max *= 1000;
 }
 
-bool checkResults(double* h_out, double* h_ref, double eps) {
-  double delta = abs(*h_out - *h_ref);
-  if (delta > eps) return false;
-  return true;
-}
-
-double* AllocateHostArray(unsigned int size) {
+double* allocateHostArray(unsigned int size) {
   double* h_array;
   cudaError_t code = cudaMallocHost(&h_array, size);
   if (code != cudaSuccess) {
@@ -101,14 +172,14 @@ double* AllocateHostArray(unsigned int size) {
   return h_array;
 }
 
-double* AllocateDeviceArray(unsigned int size) {
-  double* d_array;
-  cudaError_t code = cudaMalloc(&d_array, size);
+double* allocateDeviceArray(unsigned int size) {
+  double* d_arr;
+  cudaError_t code = cudaMalloc(&d_arr, size);
   if (code != cudaSuccess) {
     printf("Memory allocation on the device was unsuccessful.\n");
     exit(EXIT_FAILURE);
   }
-  return d_array;
+  return d_arr;
 }
 
 int main(int argc, char* argv[]) {
@@ -152,60 +223,30 @@ int main(int argc, char* argv[]) {
     dimBlock[i].x = BLOCK_SIZE;
     dimGrid[i].x = lengths[i + 1];
   }
-  //for (int i = BLOCK_SIZE; i > 0; i >>= 1)
-  //  if (lengths[tree_depth] < i) dimBlock[tree_depth - 1].x = i;
 
   // Shared memory size
   unsigned int s_size = sizeof(double) * BLOCK_SIZE;
 
   // Allocate host arrays
-  double* h_in = AllocateHostArray(sizeof(double) * N);
-  double* h_out = AllocateHostArray(sizeof(double));
-  double* h_ref = AllocateHostArray(sizeof(double));
+  double* h_in = allocateHostArray(sizeof(double) * N);
+  double* h_out = allocateHostArray(sizeof(double));
+  double* h_ref = allocateHostArray(sizeof(double));
 
   // Allocate device arrays
   double* d_arr[tree_depth + 1];
   for (int i = 0; i < tree_depth + 1; i++)
-    d_arr[i] = AllocateDeviceArray(sizeof(double) * lengths[i]);
+    d_arr[i] = allocateDeviceArray(sizeof(double) * lengths[i]);
 
   // Fill host array with random numbers
   srand(73);
   for (unsigned int i = 0; i < N; i++)
     h_in[i] = ((double)rand() / RAND_MAX - 0.5f) * 2 * M;
 
+  // Perform reduction on the device a number of times
   while (dur_in_total < dur_max) {
     nruns_gpu++;
-
-    // Setup timing
-    cudaEvent_t start_ex, end_ex, start_in, end_in;
-    cudaEventCreate(&start_ex);
-    cudaEventCreate(&end_ex);
-    cudaEventCreate(&start_in);
-    cudaEventCreate(&end_in);
-
-    // Copy host array to device
-    cudaEventRecord(start_in, 0);
-    cudaMemcpy(d_arr[0], h_in, N * sizeof(double), cudaMemcpyHostToDevice);
-
-    // Perform reduction on device
-    cudaEventRecord(start_ex, 0);
-    for (int i = 0; i < tree_depth; i++)
-      // The long switch statement unrolling the block sizes turned out to be
-      // slower than just leaving them all as BLOCK_SIZE
-      reductionDevice<BLOCK_SIZE> <<<dimGrid[i], dimBlock[i], s_size>>>
-          (d_arr[i], d_arr[i + 1], lengths[i]);
-    cudaEventRecord(end_ex, 0);
-    cudaEventSynchronize(end_ex);
-
-    // Copy device array back to host
-    cudaMemcpy(h_out, d_arr[tree_depth], sizeof(double),
-               cudaMemcpyDeviceToHost);
-    cudaEventRecord(end_in, 0);
-    cudaEventSynchronize(end_in);
-
-    // Calculate durations
-    cudaEventElapsedTime(&dur_ex, start_ex, end_ex);
-    cudaEventElapsedTime(&dur_in, start_in, end_in);
+    reductionOnDevice(h_in, h_out, d_arr, N, tree_depth, lengths, dimBlock,
+                      dimGrid, s_size, dur_ex, dur_in);
     dur_ex_total += dur_ex;
     dur_in_total += dur_in;
     if (dur_ex < dur_ex_min) dur_ex_min = dur_ex;
@@ -213,22 +254,10 @@ int main(int argc, char* argv[]) {
     if (dur_in_total == 0.f) break;
   }
 
+  // Perform reduction on the host a number of times
   while (dur_cpu_total < dur_max) {
     nruns_cpu++;
-
-    // Setup timing
-    cudaEvent_t start_cpu, end_cpu;
-    cudaEventCreate(&start_cpu);
-    cudaEventCreate(&end_cpu);
-
-    // Perform reduction on host
-    cudaEventRecord(start_cpu, 0);
-    reductionHost(h_in, h_ref, N);
-    cudaEventRecord(end_cpu, 0);
-    cudaEventSynchronize(end_cpu);
-
-    // Calculate durations
-    cudaEventElapsedTime(&dur_cpu, start_cpu, end_cpu);
+    reductionOnHost(h_in, h_ref, N, dur_cpu);
     dur_cpu_total += dur_cpu;
     if (dur_cpu < dur_cpu_min) dur_cpu_min = dur_cpu;
     if (dur_cpu_total == 0.f) break;
