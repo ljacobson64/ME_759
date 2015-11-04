@@ -155,7 +155,8 @@ int main(int argc, char* argv[]) {
   for (int i = BLOCK_SIZE; i > 0; i >>= 1)
     if (lengths[tree_depth] < i) dimBlock[tree_depth - 1].x = i;
 
-  unsigned int shared_size = sizeof(double) * BLOCK_SIZE;
+  // Shared memory size
+  unsigned int s_size = sizeof(double) * BLOCK_SIZE;
 
   // Allocate host arrays
   double* h_in = AllocateHostArray(sizeof(double) * N);
@@ -188,9 +189,50 @@ int main(int argc, char* argv[]) {
 
     // Perform reduction on device
     cudaEventRecord(start_ex, 0);
-    for (int i = 0; i < tree_depth; i++)
-      reductionDevice<BLOCK_SIZE> <<<dimGrid[i], dimBlock[i], shared_size>>>
-          (d_arr[i], d_arr[i + 1], lengths[i]);
+    for (int i = 0; i < tree_depth; i++) {
+      switch (dimBlock[i].x) {
+        case 512:
+          reductionDevice<512> <<<dimGrid[i], dimBlock[i], s_size>>>
+              (d_arr[i], d_arr[i + 1], lengths[i]);
+          break;
+        case 256:
+          reductionDevice<256> <<<dimGrid[i], dimBlock[i], s_size>>>
+              (d_arr[i], d_arr[i + 1], lengths[i]);
+          break;
+        case 128:
+          reductionDevice<128> <<<dimGrid[i], dimBlock[i], s_size>>>
+              (d_arr[i], d_arr[i + 1], lengths[i]);
+          break;
+        case 64:
+          reductionDevice<64> <<<dimGrid[i], dimBlock[i], s_size>>>
+              (d_arr[i], d_arr[i + 1], lengths[i]);
+          break;
+        case 32:
+          reductionDevice<32> <<<dimGrid[i], dimBlock[i], s_size>>>
+              (d_arr[i], d_arr[i + 1], lengths[i]);
+          break;
+        case 16:
+          reductionDevice<16> <<<dimGrid[i], dimBlock[i], s_size>>>
+              (d_arr[i], d_arr[i + 1], lengths[i]);
+          break;
+        case 8:
+          reductionDevice<8> <<<dimGrid[i], dimBlock[i], s_size>>>
+              (d_arr[i], d_arr[i + 1], lengths[i]);
+          break;
+        case 4:
+          reductionDevice<4> <<<dimGrid[i], dimBlock[i], s_size>>>
+              (d_arr[i], d_arr[i + 1], lengths[i]);
+          break;
+        case 2:
+          reductionDevice<2> <<<dimGrid[i], dimBlock[i], s_size>>>
+              (d_arr[i], d_arr[i + 1], lengths[i]);
+          break;
+        case 1:
+          reductionDevice<1> <<<dimGrid[i], dimBlock[i], s_size>>>
+              (d_arr[i], d_arr[i + 1], lengths[i]);
+          break;
+      }
+    }
     cudaEventRecord(end_ex, 0);
     cudaEventSynchronize(end_ex);
 
