@@ -8,12 +8,22 @@
 #define DOUBLE_BLOCK 1024
 #define MAX_GRID_DIM 65535
 
+__device__ void warpReduce(volatile double* s_data, int t) {
+  s_data[t] += s_data[t + 32];
+  s_data[t] += s_data[t + 16];
+  s_data[t] += s_data[t + 8];
+  s_data[t] += s_data[t + 4];
+  s_data[t] += s_data[t + 2];
+  s_data[t] += s_data[t + 1];
+}
+
 __global__ void reductionDevice(double* d_in, double* d_out, unsigned int N) {
   extern __shared__ double s_data[];
 
   // Indexing
   unsigned int blockId = blockIdx.y * gridDim.x + blockIdx.x;
   unsigned int i = blockId * (blockDim.x * 2) + threadIdx.x;
+  unsigned int gridSize = blockDim.x * 2 * gridDim.x;
 
   // Each thread loads 2 values into shared memory and adds them
   if (i + blockDim.x < N)
@@ -22,18 +32,16 @@ __global__ void reductionDevice(double* d_in, double* d_out, unsigned int N) {
     s_data[threadIdx.x] = d_in[i];
   else
     s_data[threadIdx.x] = 0.f;
-
-  // Make sure all the memory in the block is loaded before continuing
   __syncthreads();
 
-  // Add the first and second halves of the array and place the result in the
-  // first half. Then add the first and second halves of the original first
-  // half, and repeat until the entire block is reduced.
-  for (unsigned int offset = blockDim.x / 2; offset > 0; offset >>= 1) {
-    if (threadIdx.x < offset)
-      s_data[threadIdx.x] += s_data[threadIdx.x + offset];
-    __syncthreads();
-  }
+  // Unroll the loop
+  if (threadIdx.x < 256) s_data[threadIdx.x] += s_data[threadIdx.x + 256];
+  __syncthreads();
+  if (threadIdx.x < 128) s_data[threadIdx.x] += s_data[threadIdx.x + 128];
+  __syncthreads();
+  if (threadIdx.x < 64) s_data[threadIdx.x] += s_data[threadIdx.x + 64];
+  __syncthreads();
+  if (threadIdx.x < 32) warpReduce(s_data, threadIdx.x);
 
   // Write the result for each block into d_out
   if (threadIdx.x == 0 && i < N) d_out[blockId] = s_data[0];
@@ -66,6 +74,7 @@ void parseInput(int argc, char* argv[], unsigned int& N, unsigned int& M,
     return;
   }
   if (sscanf(argv[3], "%f", &dur_max) != 1) exitUsage();
+  dur_max *= 1000;
 }
 
 bool checkResults(double* h_out, double* h_ref, double eps) {
