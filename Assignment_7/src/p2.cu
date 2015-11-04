@@ -3,7 +3,6 @@
 #include "stdio.h"
 #include "stdlib.h"
 
-#define TREE_DEPTH 3
 #define BLOCK_SIZE 512
 #define MAX_GRID_DIM 65535
 
@@ -88,14 +87,23 @@ int main(int argc, char* argv[]) {
   float dur_in_min = 1e99;
   float dur_cpu_min = 1e99;
 
-  // Setup grid
-  int lengths[TREE_DEPTH + 1];
+  // Calculate the tree depth
+  int tree_depth = 0;
+  int length = N;
+  while (length > 1) {
+    length = (length + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    tree_depth++;
+  }
+  
+  // Calculate the lengths of the device arrays
+  int lengths[tree_depth + 1];
   lengths[0] = N;
-  for (int i = 1; i < TREE_DEPTH + 1; i++)
+  for (int i = 1; i < tree_depth + 1; i++)
     lengths[i] = (lengths[i - 1] + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-  dim3 dimGrid[TREE_DEPTH];
-  for (int i = 0; i < TREE_DEPTH; i++) {
+  // Setup grid
+  dim3 dimGrid[tree_depth];
+  for (int i = 0; i < tree_depth; i++) {
     if (lengths[i + 1] > MAX_GRID_DIM) {
       dimGrid[i].x = MAX_GRID_DIM;
       dimGrid[i].y = (lengths[i + 1] + MAX_GRID_DIM - 1) / MAX_GRID_DIM;
@@ -113,8 +121,8 @@ int main(int argc, char* argv[]) {
   double* h_ref = AllocateHostArray(sizeof(double));
 
   // Allocate device arrays
-  double* d_arr[TREE_DEPTH + 1];
-  for (int i = 0; i < TREE_DEPTH + 1; i++)
+  double* d_arr[tree_depth + 1];
+  for (int i = 0; i < tree_depth + 1; i++)
     d_arr[i] = AllocateDeviceArray(sizeof(double) * lengths[i]);
 
   // Fill host array with random numbers
@@ -138,14 +146,14 @@ int main(int argc, char* argv[]) {
 
     // Perform reduction on device
     cudaEventRecord(start_ex, 0);
-    for (int i = 0; i < TREE_DEPTH; i++)
+    for (int i = 0; i < tree_depth; i++)
       reductionDevice <<<dimGrid[i], BLOCK_SIZE, shared_size>>>
           (d_arr[i], d_arr[i + 1], lengths[i]);
     cudaEventRecord(end_ex, 0);
     cudaEventSynchronize(end_ex);
 
     // Copy device array back to host
-    cudaMemcpy(h_out, d_arr[3], sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_out, d_arr[tree_depth], sizeof(double), cudaMemcpyDeviceToHost);
     cudaEventRecord(end_in, 0);
     cudaEventSynchronize(end_in);
 
@@ -196,8 +204,10 @@ int main(int argc, char* argv[]) {
   printf("N: %d\n", N);
   printf("M: %d\n", M);
   printf("Block size: %d\n", BLOCK_SIZE);
-  printf("gridDims: %dx%d, %dx%d, %dx%d\n", dimGrid[0].y, dimGrid[0].x,
-         dimGrid[1].y, dimGrid[1].x, dimGrid[2].y, dimGrid[2].x);
+  printf("gridDims: ");
+  for (int i = 0; i < tree_depth; i++)
+    printf("%dx%d, ", dimGrid[i].y, dimGrid[i].x);
+  printf("%dx%d\n", dimGrid[tree_depth].y, dimGrid[tree_depth].x);
   printf("GPU result: %24.14f\n", *h_out);
   printf("CPU result: %24.14f\n", *h_ref);
   printf("Timing results %12s %12s %8s\n", "Average", "Minimum", "Num_runs");
@@ -210,7 +220,7 @@ int main(int argc, char* argv[]) {
   cudaFree(h_in);
   cudaFree(h_out);
   cudaFree(h_ref);
-  for (int i = 0; i < TREE_DEPTH + 1; i++) cudaFree(d_arr[i]);
+  for (int i = 0; i < tree_depth + 1; i++) cudaFree(d_arr[i]);
 
   return 0;
 }
