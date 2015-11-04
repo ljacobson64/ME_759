@@ -8,7 +8,7 @@
 #define DOUBLE_BLOCK 1024
 #define MAX_GRID_DIM 65535
 
-__global__ void reductionDevice(double* d_in, double* d_out, int N) {
+__global__ void reductionDevice(double* d_in, double* d_out, unsigned int N) {
   extern __shared__ double s_data[];
 
   // Indexing
@@ -39,13 +39,19 @@ __global__ void reductionDevice(double* d_in, double* d_out, int N) {
   if (threadIdx.x == 0 && i < N) d_out[blockId] = s_data[0];
 }
 
+void reductionHost(double* h_in, double* h_ref, unsigned int N) {
+  double result = 0.f;
+  for (unsigned int i = 0; i < N; i++) result += h_in[i];
+  *h_ref = result;
+}
+
 void exitUsage() {
   printf("Usage: ./p2 [<M> <N> [<dur_max>]]\n");
   exit(EXIT_SUCCESS);
 }
 
-void parseInput(int argc, char* argv[], unsigned int &N, unsigned int &M,
-                float &dur_max) {
+void parseInput(int argc, char* argv[], unsigned int& N, unsigned int& M,
+                float& dur_max) {
   if (argc == 1) {
     N = 50000000;
     M = 5;
@@ -62,19 +68,13 @@ void parseInput(int argc, char* argv[], unsigned int &N, unsigned int &M,
   if (sscanf(argv[3], "%f", &dur_max) != 1) exitUsage();
 }
 
-void reductionHost(double* h_in, double* h_ref, int N) {
-  double result = 0.f;
-  for (int i = 0; i < N; i++) result += h_in[i];
-  *h_ref = result;
-}
-
 bool checkResults(double* h_out, double* h_ref, double eps) {
   double delta = abs(*h_out - *h_ref);
   if (delta > eps) return false;
   return true;
 }
 
-double* AllocateHostArray(int size) {
+double* AllocateHostArray(unsigned int size) {
   double* h_array;
   cudaError_t code = cudaMallocHost(&h_array, size);
   if (code != cudaSuccess) {
@@ -84,7 +84,7 @@ double* AllocateHostArray(int size) {
   return h_array;
 }
 
-double* AllocateDeviceArray(int size) {
+double* AllocateDeviceArray(unsigned int size) {
   double* d_array;
   cudaError_t code = cudaMalloc(&d_array, size);
   if (code != cudaSuccess) {
@@ -112,14 +112,16 @@ int main(int argc, char* argv[]) {
 
   // Calculate the tree depth
   int tree_depth = 0;
-  int length = N;
-  while (length > 1) {
-    length = (length + DOUBLE_BLOCK - 1) / DOUBLE_BLOCK;
-    tree_depth++;
+  {
+    unsigned int length = N;
+    while (length > 1) {
+      length = (length + DOUBLE_BLOCK - 1) / DOUBLE_BLOCK;
+      tree_depth++;
+    }
   }
 
   // Calculate the lengths of the device arrays
-  int lengths[tree_depth + 1];
+  unsigned int lengths[tree_depth + 1];
   lengths[0] = N;
   for (int i = 1; i < tree_depth + 1; i++)
     lengths[i] = (lengths[i - 1] + DOUBLE_BLOCK - 1) / DOUBLE_BLOCK;
@@ -136,7 +138,7 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  int shared_size = sizeof(double) * BLOCK_SIZE;
+  unsigned int shared_size = sizeof(double) * BLOCK_SIZE;
 
   // Allocate host arrays
   double* h_in = AllocateHostArray(sizeof(double) * N);
@@ -150,7 +152,7 @@ int main(int argc, char* argv[]) {
 
   // Fill host array with random numbers
   srand(73);
-  for (int i = 0; i < N; i++)
+  for (unsigned int i = 0; i < N; i++)
     h_in[i] = ((double)rand() / RAND_MAX - 0.5f) * 2 * M;
 
   while (dur_in_total < dur_max) {
@@ -176,7 +178,8 @@ int main(int argc, char* argv[]) {
     cudaEventSynchronize(end_ex);
 
     // Copy device array back to host
-    cudaMemcpy(h_out, d_arr[tree_depth], sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_out, d_arr[tree_depth], sizeof(double),
+               cudaMemcpyDeviceToHost);
     cudaEventRecord(end_in, 0);
     cudaEventSynchronize(end_in);
 
