@@ -1,4 +1,5 @@
 #include "cuda.h"
+#include "limits.h"
 #include "math.h"
 #include "stdio.h"
 #include "stdlib.h"
@@ -8,12 +9,14 @@
 
 __global__ void reductionDevice(double* d_in, double* d_out, int N) {
   extern __shared__ double s_data[];
-  int blockId = blockIdx.y * gridDim.x + blockIdx.x;
-  int i = blockId * blockDim.x + threadIdx.x;
+
+  // Indexing
+  unsigned int bid = blockIdx.y * gridDim.x + blockIdx.x;
+  unsigned int tid = bid * blockDim.x + threadIdx.x;
 
   // Load data into shared memory
-  if (i < N)
-    s_data[threadIdx.x] = d_in[i];
+  if (tid < N)
+    s_data[threadIdx.x] = d_in[tid];
   else
     s_data[threadIdx.x] = 0.f;
 
@@ -23,14 +26,32 @@ __global__ void reductionDevice(double* d_in, double* d_out, int N) {
   // Add the first and second halves of the array and place the result in the
   // first half. Then add the first and second halves of the original first
   // half, and repeat until the entire block is reduced.
-  for (int offset = blockDim.x / 2; offset > 0; offset >>= 1) {
+  for (unsigned int offset = blockDim.x / 2; offset > 0; offset >>= 1) {
     if (threadIdx.x < offset)
       s_data[threadIdx.x] += s_data[threadIdx.x + offset];
     __syncthreads();
   }
 
   // Write the result for each block into d_out
-  if (threadIdx.x == 0 && i < N) d_out[blockId] = s_data[0];
+  if (threadIdx.x == 0 && tid < N) d_out[bid] = s_data[0];
+}
+
+void exitUsage() {
+  printf("Usage: ./p2 <M> <N>\n");
+  exit(EXIT_SUCCESS);
+}
+
+void parseInput(int argc, char* argv[], unsigned int &N, unsigned int &M) {
+  if (argc != 3) exitUsage();
+  char *endptr;
+  long Nlong = strtol(argv[1], &endptr, 10);
+  if (!*argv[1] || *endptr) exitUsage();
+  long Mlong = strtol(argv[2], &endptr, 10);
+  if (!*argv[2] || *endptr) exitUsage();
+  if (Nlong > UINT_MAX) exitUsage();
+  if (Mlong > UINT_MAX) exitUsage();
+  N = (unsigned int)Nlong;
+  M = (unsigned int)Mlong;
 }
 
 void reductionHost(double* h_in, double* h_ref, int N) {
@@ -66,14 +87,8 @@ double* AllocateDeviceArray(int size) {
 }
 
 int main(int argc, char* argv[]) {
-  int N, M;
-  if (argc == 3) {
-    N = atoi(argv[1]);
-    M = atoi(argv[2]);
-  } else {
-    printf("Usage: ./p2 <M> <N>\n");
-    return 0;
-  }
+  unsigned int N, M;
+  parseInput(argc, argv, N, M);
   float dur_max = 1000.f;
 
   // Setup timing
@@ -94,7 +109,7 @@ int main(int argc, char* argv[]) {
     length = (length + BLOCK_SIZE - 1) / BLOCK_SIZE;
     tree_depth++;
   }
-  
+
   // Calculate the lengths of the device arrays
   int lengths[tree_depth + 1];
   lengths[0] = N;
@@ -201,13 +216,14 @@ int main(int argc, char* argv[]) {
     printf("Test FAILED\n");
 
   // Print stuff
-  printf("N: %d\n", N);
-  printf("M: %d\n", M);
+  printf("N: %u\n", N);
+  printf("M: %u\n", M);
   printf("Block size: %d\n", BLOCK_SIZE);
+  printf("Tree depth: %d\n", tree_depth);
   printf("gridDims: ");
-  for (int i = 0; i < tree_depth; i++)
+  for (int i = 0; i < tree_depth - 1; i++)
     printf("%dx%d, ", dimGrid[i].y, dimGrid[i].x);
-  printf("%dx%d\n", dimGrid[tree_depth].y, dimGrid[tree_depth].x);
+  printf("%dx%d\n", dimGrid[tree_depth - 1].y, dimGrid[tree_depth - 1].x);
   printf("GPU result: %24.14f\n", *h_out);
   printf("CPU result: %24.14f\n", *h_ref);
   printf("Timing results %12s %12s %8s\n", "Average", "Minimum", "Num_runs");
