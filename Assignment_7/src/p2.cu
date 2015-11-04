@@ -1,6 +1,7 @@
 #include "cuda.h"
 #include "math.h"
 #include "stdio.h"
+#include "stdlib.h"
 
 #define BLOCK_SIZE 512
 #define MAX_GRID_DIM 65535
@@ -46,6 +47,26 @@ bool checkResults(double* h_out, double* h_ref, double eps) {
   return true;
 }
 
+double* AllocateHostArray(int size) {
+  double *h_array;
+  cudaError_t code = cudaMallocHost(&h_array, size);
+  if (code != cudaSuccess) {
+    printf("Memory allocation on the host was unsuccessful.\n");
+    exit(EXIT_FAILURE);
+  }
+  return h_array;
+}
+
+double* AllocateDeviceArray(int size) {
+  double *d_array;
+  cudaError_t code = cudaMalloc(&d_array, size);
+  if (code != cudaSuccess) {
+    printf("Memory allocation on the device was unsuccessful.\n");
+    exit(EXIT_FAILURE);
+  }
+  return d_array;
+}
+
 int main(int argc, char* argv[]) {
   int N, M;
   if (argc == 3) {
@@ -85,17 +106,15 @@ int main(int argc, char* argv[]) {
   int shared_size = sizeof(double) * BLOCK_SIZE;
 
   // Allocate host arrays
-  double* h_in, *h_out, *h_ref;
-  cudaMallocHost(&h_in, sizeof(double) * N);
-  cudaMallocHost(&h_out, sizeof(double));
-  cudaMallocHost(&h_ref, sizeof(double));
+  double* h_in = AllocateHostArray(sizeof(double) * N);
+  double* h_out = AllocateHostArray(sizeof(double));
+  double* h_ref = AllocateHostArray(sizeof(double));
 
   // Allocate device arrays
-  double* d_0, *d_1, *d_2, *d_3;
-  cudaMalloc(&d_0, sizeof(double) * lengths[0]);
-  cudaMalloc(&d_1, sizeof(double) * lengths[1]);
-  cudaMalloc(&d_2, sizeof(double) * lengths[2]);
-  cudaMalloc(&d_3, sizeof(double) * lengths[3]);
+  double* d_0 = AllocateDeviceArray(sizeof(double) * lengths[0]);
+  double* d_1 = AllocateDeviceArray(sizeof(double) * lengths[1]);
+  double* d_2 = AllocateDeviceArray(sizeof(double) * lengths[2]);
+  double* d_3 = AllocateDeviceArray(sizeof(double) * lengths[3]);
 
   // Fill host array with random numbers
   srand(73);
