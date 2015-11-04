@@ -3,28 +3,27 @@
 #include "stdio.h"
 #include "stdlib.h"
 
+#define TREE_DEPTH 3
 #define BLOCK_SIZE 512
 #define MAX_GRID_DIM 65535
 
 __global__ void reductionDevice(double* d_in, double* d_out, int N) {
-  // Setup shared memory
-  extern __shared__ float s_data[];
+  extern __shared__ double s_data[];
   int blockId = blockIdx.y * gridDim.x + blockIdx.x;
   int i = blockId * blockDim.x + threadIdx.x;
 
-  // Load global memory into shared memory
+  // Load data into shared memory
   if (i < N)
     s_data[threadIdx.x] = d_in[i];
   else
     s_data[threadIdx.x] = 0.f;
 
-  // Make sure all the memory in a block is loaded before continuing
+  // Make sure all the memory in the block is loaded before continuing
   __syncthreads();
 
   // Add the first and second halves of the array and place the result in the
   // first half. Then add the first and second halves of the original first
-  // half, and repeat until the final block sum is computed. The total number of
-  // loops is equal to log_2(blockDim.x).
+  // half, and repeat until the entire block is reduced.
   for (int offset = blockDim.x / 2; offset > 0; offset >>= 1) {
     if (threadIdx.x < offset)
       s_data[threadIdx.x] += s_data[threadIdx.x + offset];
@@ -48,7 +47,7 @@ bool checkResults(double* h_out, double* h_ref, double eps) {
 }
 
 double* AllocateHostArray(int size) {
-  double *h_array;
+  double* h_array;
   cudaError_t code = cudaMallocHost(&h_array, size);
   if (code != cudaSuccess) {
     printf("Memory allocation on the host was unsuccessful.\n");
@@ -58,7 +57,7 @@ double* AllocateHostArray(int size) {
 }
 
 double* AllocateDeviceArray(int size) {
-  double *d_array;
+  double* d_array;
   cudaError_t code = cudaMalloc(&d_array, size);
   if (code != cudaSuccess) {
     printf("Memory allocation on the device was unsuccessful.\n");
@@ -76,7 +75,7 @@ int main(int argc, char* argv[]) {
     printf("Usage: ./p2 <M> <N>\n");
     return 0;
   }
-  float dur_max = 1e-30;
+  float dur_max = 1000.f;
 
   // Setup timing
   int nruns_gpu = 0;
@@ -85,15 +84,18 @@ int main(int argc, char* argv[]) {
   float dur_ex_total = 0.f;
   float dur_in_total = 0.f;
   float dur_cpu_total = 0.f;
+  float dur_ex_min = 1e99;
+  float dur_in_min = 1e99;
+  float dur_cpu_min = 1e99;
 
   // Setup grid
-  int lengths[4];
+  int lengths[TREE_DEPTH + 1];
   lengths[0] = N;
-  for (int i = 1; i < 4; i++)
+  for (int i = 1; i < TREE_DEPTH + 1; i++)
     lengths[i] = (lengths[i - 1] + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
   dim3 dimGrid[3];
-  for (int i = 0; i < 3; i++) {
+  for (int i = 0; i < TREE_DEPTH; i++) {
     if (lengths[i + 1] > MAX_GRID_DIM) {
       dimGrid[i].x = MAX_GRID_DIM;
       dimGrid[i].y = (lengths[i + 1] + MAX_GRID_DIM - 1) / MAX_GRID_DIM;
@@ -156,6 +158,8 @@ int main(int argc, char* argv[]) {
     cudaEventElapsedTime(&dur_in, start_in, end_in);
     dur_ex_total += dur_ex;
     dur_in_total += dur_in;
+    if (dur_ex < dur_ex_min) dur_ex_min = dur_ex;
+    if (dur_in < dur_in_min) dur_in_min = dur_in;
     if (dur_in_total == 0.f) break;
   }
 
@@ -176,6 +180,7 @@ int main(int argc, char* argv[]) {
     // Calculate durations
     cudaEventElapsedTime(&dur_cpu, start_cpu, end_cpu);
     dur_cpu_total += dur_cpu;
+    if (dur_cpu < dur_cpu_min) dur_cpu_min = dur_cpu;
     if (dur_cpu_total == 0.f) break;
   }
 
@@ -195,16 +200,14 @@ int main(int argc, char* argv[]) {
   printf("N: %d\n", N);
   printf("M: %d\n", M);
   printf("Block size: %d\n", BLOCK_SIZE);
-  printf("gridDim[0]: %dx%d\n", dimGrid[0].y, dimGrid[0].x);
-  printf("gridDim[1]: %dx%d\n", dimGrid[1].y, dimGrid[1].x);
-  printf("gridDim[2]: %dx%d\n", dimGrid[2].y, dimGrid[2].x);
-  printf("Num runs GPU: %d\n", nruns_gpu);
-  printf("Num runs CPU: %d\n", nruns_cpu);
+  printf("gridDims: %dx%d, %dx%d, %dx%d\n", dimGrid[0].y, dimGrid[0].x,
+         dimGrid[1].y, dimGrid[1].x, dimGrid[2].y, dimGrid[2].x);
   printf("GPU result: %24.14f\n", *h_out);
   printf("CPU result: %24.14f\n", *h_ref);
-  printf("GPU execution time (exclusive): %12.6f\n", dur_ex);
-  printf("GPU execution time (inclusive): %12.6f\n", dur_in);
-  printf("CPU execution time:             %12.6f\n", dur_cpu);
+  printf("Timing results %12s %12s %8s\n", "Average", "Minimum", "Num_runs");
+  printf("GPU exclusive: %12.6f %12.6f %8d\n", dur_ex, dur_ex_min, nruns_gpu);
+  printf("GPU inclusive: %12.6f %12.6f %8d\n", dur_in, dur_in_min, nruns_gpu);
+  printf("CPU:           %12.6f %12.6f %8d\n", dur_cpu, dur_cpu_min, nruns_cpu);
   printf("\n");
 
   // Free arrays
