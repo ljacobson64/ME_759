@@ -5,7 +5,7 @@
 #include "stdlib.h"
 
 #define BLOCK_SIZE 512
-#define ELEMS_PER_THREAD 192
+#define ELEMS_PER_THREAD 32
 
 template <unsigned int blockSize>
 __device__ void warpReduce(volatile double* s_data, unsigned int t) {
@@ -71,6 +71,14 @@ void reductionOnDevice(double* h_in, double* h_out, double** d_arr,
   cudaMemcpy(d_arr[0], h_in, N * sizeof(double), cudaMemcpyHostToDevice);
 
   // Perform reduction on device
+  cudaEventRecord(start_ex, 0);
+  for (int i = 0; i < tree_depth; i++) {
+    reductionKernel<BLOCK_SIZE> <<<dimGrid[i], dimBlock[i], s_size>>>
+        (d_arr[i], d_arr[i + 1], lengths[i]);
+  }
+  cudaEventRecord(end_ex, 0);
+  cudaEventSynchronize(end_ex);
+  /*
   switch (tree_depth) {
     // The long switch statement unrolling the block sizes turned out to be
     // slower than just leaving them all as BLOCK_SIZE
@@ -102,6 +110,7 @@ void reductionOnDevice(double* h_in, double* h_out, double** d_arr,
       cudaEventSynchronize(end_ex);
       break;
   }
+  */
 
   // Copy device array back to host
   cudaMemcpy(h_out, d_arr[tree_depth], sizeof(double), cudaMemcpyDeviceToHost);
