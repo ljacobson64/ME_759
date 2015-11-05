@@ -75,9 +75,7 @@ int runTest(int argc, char** argv) {
   if (argc == 3) {
     num_elements = int_power(2, atoi(argv[1]));
     block_size = int_power(2, atoi(argv[2]));
-    if (block_size > num_elements) {
-      block_size = num_elements;
-    }
+    if (block_size > num_elements) block_size = num_elements;
   } else {
     num_elements = 1024;
     block_size = 1024;
@@ -105,9 +103,8 @@ int runTest(int argc, char** argv) {
     default:  // No Arguments or one argument
       // Initialize the input data on the host to be integer values between 0
       // and 1000
-      for (unsigned int i = 0; i < num_elements; ++i) {
+      for (unsigned int i = 0; i < num_elements; ++i)
         h_data[i] = floorf(1000 * (rand() / (float)RAND_MAX));
-      }
       break;
   }
 

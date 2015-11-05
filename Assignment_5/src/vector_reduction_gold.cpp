@@ -54,8 +54,6 @@ void computeGold(float* reference, float* idata, const unsigned int len) {
   reference[0] = 0;
   double total_sum = 0;
   unsigned int i;
-  for (i = 0; i < len; ++i) {
-    total_sum += idata[i];
-  }
+  for (i = 0; i < len; ++i) total_sum += idata[i];
   *reference = total_sum;
 }

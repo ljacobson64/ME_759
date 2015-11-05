@@ -51,7 +51,7 @@ extern "C" void computeGold(float*, const float*, const float*, unsigned int,
 void computeGold(float* C, const float* A, const float* B, unsigned int hB,
                  unsigned int wB) {
   // For each element in the result matrix matrix
-  for (unsigned int i = 0; i < hB; ++i) {
+  for (unsigned int i = 0; i < hB; ++i)
     for (unsigned int j = 0; j < wB; ++j) {
       double sum = 0;
       // check the start and end values of m and n to prevent overrunning the
@@ -68,5 +68,4 @@ void computeGold(float* C, const float* A, const float* B, unsigned int hB,
       // store the result
       C[i * wB + j] = (float)sum;
     }
-  }
 }

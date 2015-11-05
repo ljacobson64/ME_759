@@ -159,11 +159,10 @@ int main(int argc, char** argv) {
 
   printf("\n");
 
-  if (argc == 5) {
+  if (argc == 5)
     WriteFile(P, argv[4]);
-  } else if (argc == 2) {
+  else if (argc == 2)
     WriteFile(P, argv[1]);
-  }
 
   // Free matrices
   FreeMatrix(&M);
@@ -205,13 +204,12 @@ void MatrixMulOnDevice(const Matrix Munpadded, const Matrix Nunpadded,
   // Load M and N to the device
   CopyToDeviceMatrix(Md, M);
   CopyToDeviceMatrix(Nd, N);
-  // CopyToDeviceMatrix(Pd, P);
 
   // Start exclusive timing
   cudaEventRecord(start_ex, 0);
 
   // Launch the device computation threads
-  MatrixMulKernel << <dimGrid, dimBlock>>> (Md, Nd, Pd);
+  MatrixMulKernel <<<dimGrid, dimBlock>>> (Md, Nd, Pd);
 
   // End exclusive timing
   cudaEventRecord(end_ex, 0);

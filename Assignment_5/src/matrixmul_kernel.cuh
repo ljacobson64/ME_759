@@ -73,9 +73,8 @@ __global__ void MatrixMulKernel(const Matrix M, const Matrix N, Matrix P) {
     __syncthreads();
 
     // Sum the contributions from each thread in the subarray
-    for (unsigned short s = 0; s < BLOCK_SIZE; s++) {
+    for (unsigned short s = 0; s < BLOCK_SIZE; s++)
       result += sM[threadIdx.y][s] * sN[s][threadIdx.x];
-    }
 
     __syncthreads();
   }

@@ -403,9 +403,8 @@ void WriteFile(Matrix M, char* file_name) {
 // Print matrix to stdout
 void PrintMatrix(Matrix M) {
   for (int j = 0; j < M.height; j++) {
-    for (int i = 0; i < M.width; i++) {
+    for (int i = 0; i < M.width; i++)
       printf(" %5.2f", M.elements[j * M.width + i]);
-    }
     printf("\n");
   }
   printf("\n");

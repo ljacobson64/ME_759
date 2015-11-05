@@ -55,9 +55,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Declarations, forward
 ////////////////////////////////////////////////////////////////////////////////
-extern "C"
-void computeGold(float*, const float*, const float, const float*,
-                 const float, unsigned int, unsigned int);
+extern "C" void computeGold(float*, const float*, const float, const float*,
+                            const float, unsigned int, unsigned int);
 
 Matrix AllocateDeviceMatrix(const Matrix M);
 Matrix AllocateMatrix(int height, int width, int init);
@@ -74,9 +73,9 @@ void MatrixAddOnDevice(const Matrix M, const float alpha, const Matrix N,
 ////////////////////////////////////////////////////////////////////////////////
 int main(int argc, char** argv) {
   // Matrices for the program
-  Matrix  M;
-  Matrix  N;
-  Matrix  P;
+  Matrix M;
+  Matrix N;
+  Matrix P;
   // Number of elements in the solution matrix
   // Assuming square matrices, so the sizes of M, N and P are equal
   unsigned int size_elements = WP * HP;
@@ -88,15 +87,15 @@ int main(int argc, char** argv) {
   if (argc != 3 && argc != 4) {
     // No inputs provided
     // Allocate and initialize the matrices
-    M  = AllocateMatrix(MATRIX_SIZE, MATRIX_SIZE, 1);
-    N  = AllocateMatrix(MATRIX_SIZE, MATRIX_SIZE, 1);
-    P  = AllocateMatrix(MATRIX_SIZE, MATRIX_SIZE, 0);
+    M = AllocateMatrix(MATRIX_SIZE, MATRIX_SIZE, 1);
+    N = AllocateMatrix(MATRIX_SIZE, MATRIX_SIZE, 1);
+    P = AllocateMatrix(MATRIX_SIZE, MATRIX_SIZE, 0);
   } else {
     // Inputs provided
     // Allocate and read source matrices from disk
-    M  = AllocateMatrix(MATRIX_SIZE, MATRIX_SIZE, 0);
-    N  = AllocateMatrix(MATRIX_SIZE, MATRIX_SIZE, 0);
-    P  = AllocateMatrix(MATRIX_SIZE, MATRIX_SIZE, 0);
+    M = AllocateMatrix(MATRIX_SIZE, MATRIX_SIZE, 0);
+    N = AllocateMatrix(MATRIX_SIZE, MATRIX_SIZE, 0);
+    P = AllocateMatrix(MATRIX_SIZE, MATRIX_SIZE, 0);
     errorM = ReadFile(&M, argv[1]);
     errorN = ReadFile(&N, argv[2]);
     // Check for read errors
@@ -108,7 +107,7 @@ int main(int argc, char** argv) {
 
   // alpha*M + beta*N on the device
   float alpha = 1.f;
-  float beta  = 1.f;
+  float beta = 1.f;
 
   // Time the operation
   MatrixAddOnDevice(M, alpha, N, beta, P);
@@ -120,7 +119,8 @@ int main(int argc, char** argv) {
   error = cudaEventCreate(&start);
 
   if (error != cudaSuccess) {
-    fprintf(stderr, "Failed to create start event (error code %s)!\n", cudaGetErrorString(error));
+    fprintf(stderr, "Failed to create start event (error code %s)!\n",
+            cudaGetErrorString(error));
     exit(EXIT_FAILURE);
   }
 
@@ -128,7 +128,8 @@ int main(int argc, char** argv) {
   error = cudaEventCreate(&stop);
 
   if (error != cudaSuccess) {
-    fprintf(stderr, "Failed to create stop event (error code %s)!\n", cudaGetErrorString(error));
+    fprintf(stderr, "Failed to create stop event (error code %s)!\n",
+            cudaGetErrorString(error));
     exit(EXIT_FAILURE);
   }
 
@@ -136,7 +137,8 @@ int main(int argc, char** argv) {
   error = cudaEventRecord(start, NULL);
 
   if (error != cudaSuccess) {
-    fprintf(stderr, "Failed to record start event (error code %s)!\n", cudaGetErrorString(error));
+    fprintf(stderr, "Failed to record start event (error code %s)!\n",
+            cudaGetErrorString(error));
     exit(EXIT_FAILURE);
   }
 
@@ -146,7 +148,8 @@ int main(int argc, char** argv) {
   error = cudaEventRecord(stop, NULL);
 
   if (error != cudaSuccess) {
-    fprintf(stderr, "Failed to record stop event (error code %s)!\n", cudaGetErrorString(error));
+    fprintf(stderr, "Failed to record stop event (error code %s)!\n",
+            cudaGetErrorString(error));
     exit(EXIT_FAILURE);
   }
 
@@ -154,7 +157,9 @@ int main(int argc, char** argv) {
   error = cudaEventSynchronize(stop);
 
   if (error != cudaSuccess) {
-    fprintf(stderr, "Failed to synchronize on the stop event (error code %s)!\n", cudaGetErrorString(error));
+    fprintf(stderr,
+            "Failed to synchronize on the stop event (error code %s)!\n",
+            cudaGetErrorString(error));
     exit(EXIT_FAILURE);
   }
 
@@ -162,19 +167,23 @@ int main(int argc, char** argv) {
   error = cudaEventElapsedTime(&msecTotal, start, stop);
 
   if (error != cudaSuccess) {
-    fprintf(stderr, "Failed to get time elapsed between events (error code %s)!\n", cudaGetErrorString(error));
+    fprintf(stderr,
+            "Failed to get time elapsed between events (error code %s)!\n",
+            cudaGetErrorString(error));
     exit(EXIT_FAILURE);
   }
 
   // Check if the device result is equivalent to the expected solution
-  bool res = CompareResults(reference.elements, P.elements, size_elements,
-                            0.0001f);
+  bool res =
+      CompareResults(reference.elements, P.elements, size_elements, 0.0001f);
   printf("CPU execution time: %24.6f ms\n", msecTotal);
   printf("Test %s\n", (1 == res) ? "PASSED" : "FAILED");
 
   // Output result if output file is requested
-  if (argc == 4)      WriteFile(P, argv[3]);
-  else if (argc == 2) WriteFile(P, argv[1]);
+  if (argc == 4)
+    WriteFile(P, argv[3]);
+  else if (argc == 2)
+    WriteFile(P, argv[1]);
 
   // Free host matrices
   free(M.elements);
@@ -189,13 +198,13 @@ int main(int argc, char** argv) {
 ////////////////////////////////////////////////////////////////////////////////
 //! wrapper around the device implementation
 ////////////////////////////////////////////////////////////////////////////////
-void MatrixAddOnDevice(const Matrix M, const float alpha,
-                       const Matrix N, const float beta, Matrix P) {
+void MatrixAddOnDevice(const Matrix M, const float alpha, const Matrix N,
+                       const float beta, Matrix P) {
   // Set up block grid
   // int block_size = 16; // Set in matrixadd.h
   dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
-  dim3 dimGrid((P.width  + BLOCK_SIZE - 1)/dimBlock.x,
-               (P.height + BLOCK_SIZE - 1)/dimBlock.y);
+  dim3 dimGrid((P.width + BLOCK_SIZE - 1) / dimBlock.x,
+               (P.height + BLOCK_SIZE - 1) / dimBlock.y);
 
   // Allocate device matrices
   Matrix dM = AllocateDeviceMatrix(M);
@@ -219,7 +228,7 @@ void MatrixAddOnDevice(const Matrix M, const float alpha,
   cudaEventRecord(start_ex, 0);
 
   // Invoke the kernel
-  MatrixAddKernel<<<dimGrid, dimBlock>>>
+  MatrixAddKernel <<<dimGrid, dimBlock>>>
       (dM.elements, alpha, dN.elements, beta, dP.elements);
 
   // End exclusive timing
@@ -237,9 +246,9 @@ void MatrixAddOnDevice(const Matrix M, const float alpha,
   cudaEventElapsedTime(&dur_ex, start_ex, end_ex);
   cudaEventDestroy(start_ex);
   cudaEventDestroy(end_ex);
-  long dur_in_ns = (end_in.tv_sec - start_in.tv_sec)*1000000000l +
-                    end_in.tv_nsec - start_in.tv_nsec;
-  double dur_in = (double)(dur_in_ns/1000000.0);
+  long dur_in_ns = (end_in.tv_sec - start_in.tv_sec) * 1000000000l +
+                   end_in.tv_nsec - start_in.tv_nsec;
+  double dur_in = (double)(dur_in_ns / 1000000.0);
   printf("GPU execution time (exclusive): %12.6f ms\n", dur_ex);
   printf("GPU execution time (inclusive): %12.6f ms\n", dur_in);
 }
@@ -264,21 +273,20 @@ Matrix AllocateMatrix(int height, int width, int init) {
   Matrix M;
   M.width = M.pitch = width;
   M.height = height;
-  int size = M.width*M.height;
+  int size = M.width * M.height;
   M.elements = NULL;
 
-  M.elements = (float*)malloc(size*sizeof(float));
+  M.elements = (float*)malloc(size * sizeof(float));
 
-  for (unsigned int i = 0; i < M.height*M.width; i++) {
-    M.elements[i] = (init == 0) ? (0.0f) : (rand()/(float)RAND_MAX);
-  }
+  for (unsigned int i = 0; i < M.height * M.width; i++)
+    M.elements[i] = (init == 0) ? (0.0f) : (rand() / (float)RAND_MAX);
 
   return M;
 }
 
 // Copy a host matrix to a device matrix.
 void CopyToDeviceMatrix(Matrix Mdevice, const Matrix Mhost) {
-  int size = Mhost.width*Mhost.height*sizeof(float);
+  int size = Mhost.width * Mhost.height * sizeof(float);
   Mdevice.height = Mhost.height;
   Mdevice.width = Mhost.width;
   Mdevice.pitch = Mhost.pitch;
@@ -287,7 +295,7 @@ void CopyToDeviceMatrix(Matrix Mdevice, const Matrix Mhost) {
 
 // Copy a device matrix to a host matrix.
 void CopyFromDeviceMatrix(Matrix Mhost, const Matrix Mdevice) {
-  int size = Mdevice.width*Mdevice.height*sizeof(float);
+  int size = Mdevice.width * Mdevice.height * sizeof(float);
   cudaMemcpy(Mhost.elements, Mdevice.elements, size, cudaMemcpyDeviceToHost);
 }
 // Compare the data stored in two arrays on the host
@@ -301,11 +309,9 @@ bool CompareResults(float* A, float* B, int elements, float eps) {
 
 // Read a 16x16 floating point matrix in from file
 int ReadFile(Matrix* M, char* file_name) {
-  unsigned int data_read = MATRIX_SIZE*MATRIX_SIZE;
+  unsigned int data_read = MATRIX_SIZE * MATRIX_SIZE;
   std::ifstream ifile(file_name);
-  for (unsigned int i = 0; i < data_read; i++) {
-    ifile>>M->elements[i];
-  }
+  for (unsigned int i = 0; i < data_read; i++) ifile >> M->elements[i];
   ifile.close();
   return data_read;
 }
@@ -313,8 +319,6 @@ int ReadFile(Matrix* M, char* file_name) {
 // Write a 16x16 floating point matrix to file
 void WriteFile(Matrix M, char* file_name) {
   std::ofstream ofile(file_name);
-  for (unsigned int i = 0; i < M.width*M.height; i++) {
-    ofile<<M.elements[i];
-  }
+  for (unsigned int i = 0; i < M.width * M.height; i++) ofile << M.elements[i];
   ofile.close();
 }

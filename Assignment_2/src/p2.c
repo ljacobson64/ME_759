@@ -9,12 +9,10 @@ int get_total_length(int argc, char *argv[]) {
   int i;
 
   // Special case where no arguments are passed
-  if ( num_args == 0 ) return 0;
+  if (num_args == 0) return 0;
 
   // Sum the length of each argument
-  for ( i = 0; i < num_args; i++ ) {
-    total_length += strlen(argv[i+1]);
-  }
+  for (i = 0; i < num_args; i++) total_length += strlen(argv[i + 1]);
 
   return total_length;
 }
@@ -23,6 +21,6 @@ int get_total_length(int argc, char *argv[]) {
 int main(int argc, char *argv[]) {
   int total_length = get_total_length(argc, argv);
   printf("%u\n", total_length);
-  
+
   return 0;
 }

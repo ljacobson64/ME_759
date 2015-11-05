@@ -57,16 +57,13 @@ __global__ void reduction(float *gi_data, float *go_data, int n) {
   // half, and repeat until the final block sum is computed. The total number of
   // loops is equal to log_2(blockDim.x).
   for (unsigned int offset = blockDim.x / 2; offset > 0; offset >>= 1) {
-    if (threadIdx.x < offset) {
-      s_data[threadIdx.x] += s_data[threadIdx.x + offset];
-    }
+    if (threadIdx.x < offset
+       s_data[threadIdx.x] += s_data[threadIdx.x + offset];
     __syncthreads();
   }
 
   // Write the result for each block into go_data
-  if (threadIdx.x == 0) {
-    go_data[blockIdx.x] = s_data[0];
-  }
+  if (threadIdx.x == 0) go_data[blockIdx.x] = s_data[0];
 }
 
 #endif  // #ifndef _VECTOR_REDUCTION_KERNEL_H_

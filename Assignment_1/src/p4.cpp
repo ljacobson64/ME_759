@@ -12,10 +12,10 @@ int main() {
   c = (char)1;
 
   p = arr;
-  *(p+1) = 5;
+  *(p + 1) = 5;
   p[0] = d;
 
-  *( (char*)p + 1 ) = c;
+  *((char*)p + 1) = c;
 
   return 0;
 }

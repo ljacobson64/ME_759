@@ -62,4 +62,4 @@ typedef struct {
   float* elements;
 } Matrix;
 
-#endif // _MATRIXADD_H_
+#endif  // _MATRIXADD_H_

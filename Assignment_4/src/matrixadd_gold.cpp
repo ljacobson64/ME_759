@@ -6,9 +6,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 // export C interface
 ////////////////////////////////////////////////////////////////////////////////
-extern "C"
-void computeGold(float*, const float*, const float, const float*,
-                 const float, unsigned int, unsigned int);
+extern "C" void computeGold(float*, const float*, const float, const float*,
+                            const float, unsigned int, unsigned int);
 
 ////////////////////////////////////////////////////////////////////////////////
 //! Compute reference data set
@@ -21,7 +20,6 @@ void computeGold(float*, const float*, const float, const float*,
 ////////////////////////////////////////////////////////////////////////////////
 void computeGold(float* C, const float* A, const float al, const float* B,
                  const float be, unsigned int hA, unsigned int wA) {
-  for (unsigned int i = 0; i < hA*wA; ++i) {
-    C[i] = (float)(al*A[i] + be*B[i]);
-  }
+  for (unsigned int i = 0; i < hA * wA; ++i)
+    C[i] = (float)(al * A[i] + be * B[i]);
 }

@@ -9,7 +9,7 @@ int get_arg_length(int argc, char *argv[]) {
   int num_args = argc - 1;
 
   // If no arguments are passed, return 0
-  if ( num_args == 0 ) return 0;
+  if (num_args == 0) return 0;
 
   // If at least one argument is passed, return the length of the first argument
   return strlen(argv[1]);

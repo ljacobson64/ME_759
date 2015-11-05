@@ -90,8 +90,7 @@ int main(int argc, char *argv[]) {
   else if (version == 1 || version == 3)
     cudaFree(h);
   cudaFree(d1);
-  if (version == 2 || version == 3)
-    cudaFree(d2);
+  if (version == 2 || version == 3) cudaFree(d2);
 
   return 0;
 }

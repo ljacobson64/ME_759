@@ -51,14 +51,14 @@
 // Matrix addition kernel thread specification
 __global__ void MatrixAddKernel(const float* Melems, const float alpha,
                                 const float* Nelems, const float beta,
-                                      float* Pelems) {
-  int y = blockIdx.y*blockDim.y + threadIdx.y;
-  int x = blockIdx.x*blockDim.x + threadIdx.x;
+                                float* Pelems) {
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
+  int x = blockIdx.x * blockDim.x + threadIdx.x;
 
   // if (y > HP || x > WP) return;
 
-  int ind = y*WP + x;
-  Pelems[ind] = alpha*Melems[ind] + beta*Nelems[ind];
+  int ind = y * WP + x;
+  Pelems[ind] = alpha * Melems[ind] + beta * Nelems[ind];
 }
 
-#endif // #ifndef _MATRIXADD_KERNEL_H_
+#endif  // #ifndef _MATRIXADD_KERNEL_H_

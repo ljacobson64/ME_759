@@ -4,7 +4,7 @@
 #include <time.h>
 
 __global__ void sumArrays(double* dA, double* dB, double* dC) {
-  int ind = blockDim.x*blockIdx.x + threadIdx.x;
+  int ind = blockDim.x * blockIdx.x + threadIdx.x;
   dC[ind] = dA[ind] + dB[ind];
 }
 
@@ -15,11 +15,11 @@ int int_power(int base, int exponent) {
 }
 
 double randBetween(int low, int high) {
-  double result = (double)rand()/(double)RAND_MAX*(high - low) + low;
+  double result = (double)rand() / (double)RAND_MAX * (high - low) + low;
   return result;
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
   if (argc != 3) {
     printf("Usage: ./p2 log2(N) nthreads\n");
     exit(1);
@@ -28,20 +28,20 @@ int main(int argc, char *argv[]) {
   int exponent = atoi(argv[1]);
   int N = int_power(2, exponent);  // Number of random numbers
 
-  int nthreads = atoi(argv[2]);    // Number of threads per block
-  int nblocks = N/nthreads;        // Number of blocks
+  int nthreads = atoi(argv[2]);  // Number of threads per block
+  int nblocks = N / nthreads;    // Number of blocks
 
   // Allocate host arrays
-  int bytes = sizeof(double)*N;
-  double *hA, *hB, *hC, *refC, *difC;
-  hA   = (double*)malloc(bytes);
-  hB   = (double*)malloc(bytes);
-  hC   = (double*)malloc(bytes);
+  int bytes = sizeof(double) * N;
+  double* hA, *hB, *hC, *refC, *difC;
+  hA = (double*)malloc(bytes);
+  hB = (double*)malloc(bytes);
+  hC = (double*)malloc(bytes);
   refC = (double*)malloc(bytes);
   difC = (double*)malloc(bytes);
 
   // Allocate device arrays
-  double *dA, *dB, *dC;
+  double* dA, *dB, *dC;
   cudaMalloc(&dA, bytes);
   cudaMalloc(&dB, bytes);
   cudaMalloc(&dC, bytes);
@@ -67,17 +67,19 @@ int main(int argc, char *argv[]) {
   while (duration_in_total < 1000.0) {
     duration_ex_total = 0.0;
     duration_in_total = 0.0;
-    
+
     // Double the number of runs
-    if (num_runs != 0) num_runs *= 2;
-    else num_runs = 1;
-    
+    if (num_runs != 0)
+      num_runs *= 2;
+    else
+      num_runs = 1;
+
     for (int i = 0; i < num_runs; i++) {
       // CUDA timing variables
       cudaEvent_t start_ex, end_ex;
       cudaEventCreate(&start_ex);
       cudaEventCreate(&end_ex);
-      
+
       // Start inclusive timing
       clock_gettime(CLOCK_MONOTONIC, &start_in);
 
@@ -89,7 +91,7 @@ int main(int argc, char *argv[]) {
       cudaEventRecord(start_ex, 0);
 
       // Invoke the device kernel which sums the arrays
-      sumArrays<<<nblocks, nthreads>>>(dA, dB, dC);
+      sumArrays <<<nblocks, nthreads>>> (dA, dB, dC);
 
       // End exclusive timing
       cudaEventRecord(end_ex, 0);
@@ -105,18 +107,18 @@ int main(int argc, char *argv[]) {
       cudaEventElapsedTime(&duration_ex, start_ex, end_ex);
       cudaEventDestroy(start_ex);
       cudaEventDestroy(end_ex);
-      duration_in_ns = (end_in.tv_sec - start_in.tv_sec)*1000000000L +
-                        end_in.tv_nsec - start_in.tv_nsec;
-      duration_in = (double)(duration_in_ns/1000000.0);
+      duration_in_ns = (end_in.tv_sec - start_in.tv_sec) * 1000000000L +
+                       end_in.tv_nsec - start_in.tv_nsec;
+      duration_in = (double)(duration_in_ns / 1000000.0);
       duration_ex_total += (double)duration_ex;
       duration_in_total += duration_in;
     }
   }
-  
+
   // Calculate average durations over all runs
-  duration_ex = duration_ex_total/num_runs;
-  duration_in = duration_in_total/num_runs;
-  
+  duration_ex = duration_ex_total / num_runs;
+  duration_in = duration_in_total / num_runs;
+
   // Calculate the difference between the sum arrays and find the maximum
   // absolute difference
   double max_dif = 0.0;
