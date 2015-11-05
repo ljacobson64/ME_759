@@ -65,7 +65,6 @@ int main(int argc, char *argv[]) {
         // Copy to device and back again
         cudaEventRecord(start, 0);
         cudaMemcpy(d1, h, N, cudaMemcpyHostToDevice);
-        cudaDeviceSynchronize;
         cudaMemcpy(h, d2, N, cudaMemcpyDeviceToHost);
         cudaEventRecord(end, 0);
         cudaEventSynchronize(end);
