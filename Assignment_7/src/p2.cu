@@ -78,39 +78,6 @@ void reductionOnDevice(double* h_in, double* h_out, double** d_arr,
   }
   cudaEventRecord(end_ex, 0);
   cudaEventSynchronize(end_ex);
-  /*
-  switch (tree_depth) {
-    // The long switch statement unrolling the block sizes turned out to be
-    // slower than just leaving them all as BLOCK_SIZE
-    case 1:
-      cudaEventRecord(start_ex, 0);
-      reductionKernel<BLOCK_SIZE> <<<dimGrid[0], dimBlock[0], s_size>>>
-          (d_arr[0], d_arr[1], lengths[0]);
-      cudaEventRecord(end_ex, 0);
-      cudaEventSynchronize(end_ex);
-      break;
-    case 2:
-      cudaEventRecord(start_ex, 0);
-      reductionKernel<BLOCK_SIZE> <<<dimGrid[0], dimBlock[0], s_size>>>
-          (d_arr[0], d_arr[1], lengths[0]);
-      reductionKernel<BLOCK_SIZE> <<<dimGrid[1], dimBlock[1], s_size>>>
-          (d_arr[1], d_arr[2], lengths[1]);
-      cudaEventRecord(end_ex, 0);
-      cudaEventSynchronize(end_ex);
-      break;
-    case 3:
-      cudaEventRecord(start_ex, 0);
-      reductionKernel<BLOCK_SIZE> <<<dimGrid[0], dimBlock[0], s_size>>>
-          (d_arr[0], d_arr[1], lengths[0]);
-      reductionKernel<BLOCK_SIZE> <<<dimGrid[1], dimBlock[1], s_size>>>
-          (d_arr[1], d_arr[2], lengths[1]);
-      reductionKernel<BLOCK_SIZE> <<<dimGrid[2], dimBlock[2], s_size>>>
-          (d_arr[2], d_arr[3], lengths[2]);
-      cudaEventRecord(end_ex, 0);
-      cudaEventSynchronize(end_ex);
-      break;
-  }
-  */
 
   // Copy device array back to host
   cudaMemcpy(h_out, d_arr[tree_depth], sizeof(double), cudaMemcpyDeviceToHost);
