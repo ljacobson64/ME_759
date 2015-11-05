@@ -65,6 +65,7 @@ int main(int argc, char *argv[]) {
         // Copy to device and back again
         cudaEventRecord(start, 0);
         cudaMemcpy(d1, h, N, cudaMemcpyHostToDevice);
+        cudaDeviceSynchronize;
         cudaMemcpy(h, d2, N, cudaMemcpyDeviceToHost);
         cudaEventRecord(end, 0);
         cudaEventSynchronize(end);
@@ -90,6 +91,8 @@ int main(int argc, char *argv[]) {
   else if (version == 1 || version == 3)
     cudaFree(h);
   cudaFree(d1);
+  if (version == 2 || version == 3)
+    cudaFree(d2);
 
   return 0;
 }
