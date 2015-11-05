@@ -11,5 +11,5 @@
 time=1.0
 ../bld/p1 0 0 30 $time
 ../bld/p1 1 0 30 $time
-../bld/p1 2 0 30 $time
-../bld/p1 3 0 30 $time
+../bld/p1 2 0 25 $time
+../bld/p1 3 0 25 $time

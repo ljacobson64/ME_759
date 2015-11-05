@@ -8,4 +8,4 @@
 #SBATCH --output=/home/jacobson/p2_%J.out
 #SBATCH --error=/home/jacobson/p2_%J.err
 
-../bld/p2 50000000 5
+../bld/p2
