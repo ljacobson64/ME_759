@@ -100,7 +100,6 @@ void prescanOnDevice(float* h_in, float* h_out, float** d_arr,
   for (int i = 0; i < tree_depth; i++)
     prescanKernel <<<dimGrid[i], dimBlock[i], shared_size>>>
         (d_arr[i], d_arr[i], d_arr[i + 1], lengths[i]);
-  cudaDeviceSynchronize();
   for (int i = tree_depth - 2; i >= 0; i--)
     additionKernel <<<dimGrid[i], dimBlock[i]>>>
         (d_arr[i], d_arr[i], d_arr[i + 1], lengths[i]);
