@@ -5,26 +5,30 @@
 #include "stdlib.h"
 
 #define MAX_RAND 2
-//#define DEFAULT_NUM_ELEMENTS 16777216
-#define DEFAULT_NUM_ELEMENTS 1024
+#define DEFAULT_NUM_ELEMENTS 16777216
 #define BLOCK_SIZE 512
 #define DOUBLE_BLOCK 1024
 #define LOG_NUM_BANKS 4
 #define CONFLICT_FREE_OFFSET(x) ((x) >> LOG_NUM_BANKS)
 
-__global__ void prescanKernel(float* d_in, float* d_out, int N) {
+__global__ void prescanKernel(float* d_in, float* d_out, float* d_sums,
+                              unsigned int N) {
   extern __shared__ float s_data[];
+  unsigned int shared_end =
+      DOUBLE_BLOCK + CONFLICT_FREE_OFFSET(DOUBLE_BLOCK) - 2;
 
   // Indexing
   unsigned int offset = 1;
   unsigned int ai = threadIdx.x;
   unsigned int bi = threadIdx.x + BLOCK_SIZE;
+  unsigned int ag = ai + DOUBLE_BLOCK * blockIdx.x;
+  unsigned int bg = bi + DOUBLE_BLOCK * blockIdx.x;
   unsigned int bankOffsetA = CONFLICT_FREE_OFFSET(ai);
   unsigned int bankOffsetB = CONFLICT_FREE_OFFSET(bi);
 
   // Load data into shared memory
-  s_data[ai + bankOffsetA] = (ai < N) ? d_in[ai] : 0.f;
-  s_data[bi + bankOffsetB] = (bi < N) ? d_in[bi] : 0.f;
+  s_data[ai + bankOffsetA] = (ag < N) ? d_in[ag] : 0.f;
+  s_data[bi + bankOffsetB] = (bg < N) ? d_in[bg] : 0.f;
 
   // Build sum in place up the tree
   for (unsigned int d = BLOCK_SIZE; d > 0; d >>= 1) {
@@ -40,9 +44,11 @@ __global__ void prescanKernel(float* d_in, float* d_out, int N) {
     offset <<= 1;
   }
 
-  // Clear the last element
-  if (threadIdx.x == 0)
-    s_data[DOUBLE_BLOCK - 1 + CONFLICT_FREE_OFFSET(DOUBLE_BLOCK - 1)] = 0;
+  // Write the last element of shared memory to the auxilary array and clear it
+  if (threadIdx.x == 0) {
+    d_sums[blockIdx.x] = s_data[shared_end];
+    s_data[shared_end] = 0.f;
+  }
 
   // Traverse down the tree and build scan
   for (unsigned int d = 1; d <= BLOCK_SIZE; d <<= 1) {
@@ -62,13 +68,22 @@ __global__ void prescanKernel(float* d_in, float* d_out, int N) {
 
   // Write results to global memory
   __syncthreads();
-  if (ai < N) d_out[ai] = s_data[ai + bankOffsetA];
-  if (bi < N) d_out[bi] = s_data[bi + bankOffsetB];
+  if (ag < N) d_out[ag] = s_data[ai + bankOffsetA];
+  if (bg < N) d_out[bg] = s_data[bi + bankOffsetB];
 }
 
-void prescanOnDevice(float* h_in, float* h_out, float* d_in, float* d_out,
-                     unsigned int N, dim3 dimBlock, dim3 dimGrid,
-                     unsigned int shared_size, float& dur_ex, float& dur_in) {
+__global__ void additionKernel(float* d_in, float* d_out, float* d_sums,
+                               unsigned int N) {
+  unsigned int i = DOUBLE_BLOCK * blockIdx.x + threadIdx.x;
+  if (i >= N) return;
+  d_out[i] = d_in[i] + d_sums[blockIdx.x];
+  d_out[i + BLOCK_SIZE] = d_in[i + BLOCK_SIZE] + d_sums[blockIdx.x];
+}
+
+void prescanOnDevice(float* h_in, float* h_out, float** d_arr,
+                     unsigned int N, int tree_depth, unsigned int* lengths,
+                     dim3* dimBlock, dim3* dimGrid, unsigned int shared_size,
+                     float& dur_ex, float& dur_in) {
   // Setup timing
   cudaEvent_t start_ex, end_ex, start_in, end_in;
   cudaEventCreate(&start_ex);
@@ -78,16 +93,23 @@ void prescanOnDevice(float* h_in, float* h_out, float* d_in, float* d_out,
 
   // Copy host array to device
   cudaEventRecord(start_in, 0);
-  cudaMemcpy(d_in, h_in, sizeof(float) * N, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_arr[0], h_in, lengths[0] * sizeof(float), cudaMemcpyHostToDevice);
 
   // Perform prescan on device
   cudaEventRecord(start_ex, 0);
-  prescanKernel <<<dimGrid, dimBlock, shared_size>>> (d_in, d_out, N);
+  for (int i = 0; i < tree_depth; i++)
+    prescanKernel <<<dimGrid[i], dimBlock[i], shared_size>>>
+        (d_arr[i], d_arr[i], d_arr[i + 1], lengths[i]);
+  cudaDeviceSynchronize();
+  for (int i = tree_depth - 2; i >= 0; i--)
+    additionKernel <<<dimGrid[i], dimBlock[i]>>>
+        (d_arr[i], d_arr[i], d_arr[i + 1], lengths[i]);
   cudaEventRecord(end_ex, 0);
   cudaEventSynchronize(end_ex);
 
   // Copy device array back to host
-  cudaMemcpy(h_out, d_out, sizeof(float) * N, cudaMemcpyDeviceToHost);
+  cudaMemcpy(h_out, d_arr[0], lengths[0] * sizeof(float),
+             cudaMemcpyDeviceToHost);
   cudaEventRecord(end_in, 0);
   cudaEventSynchronize(end_in);
 
@@ -154,20 +176,20 @@ float* allocateDeviceArray(unsigned int size) {
 }
 
 void exitUsage() {
-  printf("Usage: ./p2 [<M> [<dur_max>]]\n");
+  printf("Usage: ./p2 N [dur_max]\n");
   exit(EXIT_SUCCESS);
 }
 
 void parseInput(int argc, char* argv[], unsigned int& N, float& dur_max) {
   if (argc == 1) {
     N = DEFAULT_NUM_ELEMENTS;
-    dur_max = 100.f;
+    dur_max = 1000.f;
     return;
   }
   if (argc != 2 && argc != 3) exitUsage();
   if (sscanf(argv[1], "%u", &N) != 1) exitUsage();
   if (argc == 2) {
-    dur_max = 100.f;
+    dur_max = 1000.f;
     return;
   }
   if (sscanf(argv[2], "%f", &dur_max) != 1) exitUsage();
@@ -190,6 +212,34 @@ int main(int argc, char* argv[]) {
   float dur_in_min = 1e99;
   float dur_cpu_min = 1e99;
 
+  // Calculate the tree depth
+  int tree_depth = 0;
+  {
+    unsigned int length = N;
+    while (length > 1) {
+      length = (length + DOUBLE_BLOCK - 1) / DOUBLE_BLOCK;
+      tree_depth++;
+    }
+  }
+
+  // Calculate the lengths of the device arrays
+  unsigned int lengths[tree_depth + 1];
+  lengths[0] = N;
+  for (int i = 1; i < tree_depth + 1; i++)
+    lengths[i] = (lengths[i - 1] + DOUBLE_BLOCK - 1) / DOUBLE_BLOCK;
+
+  // Setup grid
+  dim3 dimBlock[tree_depth];
+  dim3 dimGrid[tree_depth];
+  for (int i = 0; i < tree_depth; i++) {
+    dimBlock[i].x = BLOCK_SIZE;
+    dimGrid[i].x = lengths[i + 1];
+  }
+
+  // Shared memory size
+  unsigned int shared_size =
+      (DOUBLE_BLOCK + CONFLICT_FREE_OFFSET(DOUBLE_BLOCK)) * sizeof(float);
+
   // Allocate host arrays
   float* h_in = allocateHostArray(N * sizeof(float));
   float* h_out = allocateHostArray(N * sizeof(float));
@@ -200,24 +250,18 @@ int main(int argc, char* argv[]) {
   for (unsigned int i = 0; i < N; i++)
     // h_in[i] = ((double)rand() / RAND_MAX - 0.5f) * 2 * M;
     h_in[i] = (int)(rand() % MAX_RAND);
-
-  // Setup grid
-  dim3 dimBlock = BLOCK_SIZE;
-  dim3 dimGrid = (N + 2 * BLOCK_SIZE - 1) / (2 * BLOCK_SIZE);
+    //h_in[i] = 1.f;
 
   // Allocate device arrays
-  float* d_in = allocateDeviceArray(N * sizeof(float));
-  float* d_out = allocateDeviceArray(N * sizeof(float));
-
-  // Shared memory size
-  unsigned int shared_size =
-      (DOUBLE_BLOCK + CONFLICT_FREE_OFFSET(DOUBLE_BLOCK) - 2) * sizeof(float);
+  float* d_arr[tree_depth + 1];
+  for (int i = 0; i < tree_depth + 1; i++)
+    d_arr[i] = allocateDeviceArray(sizeof(float) * lengths[i]);
 
   // Perform prescan on the device a number of times
   while (dur_in_total < dur_max) {
     nruns_gpu++;
-    prescanOnDevice(h_in, h_out, d_in, d_out, N, dimBlock, dimGrid, shared_size,
-                    dur_ex, dur_in);
+    prescanOnDevice(h_in, h_out, d_arr, N, tree_depth, lengths, dimBlock,
+                    dimGrid, shared_size, dur_ex, dur_in);
     dur_ex_total += dur_ex;
     dur_in_total += dur_in;
     if (dur_ex < dur_ex_min) dur_ex_min = dur_ex;
@@ -248,10 +292,18 @@ int main(int argc, char* argv[]) {
 
   // Print stuff
   printf("N: %u\n", N);
-  printf("Block size: %d\n", dimBlock.x);
-  printf("Grid size: %d\n", dimGrid.x);
-  printf("GPU result: %24.14f\n", h_out[N - 1]);
-  printf("CPU result: %24.14f\n", h_ref[N - 1]);
+  printf("Tree depth: %d\n", tree_depth);
+  printf("Block sizes: %d", dimBlock[0].x);
+  for (int i = 1; i < tree_depth; i++) printf(", %d", dimBlock[i].x);
+  printf("\n");
+  printf("Grid sizes: %d", dimGrid[0].x);
+  for (int i = 1; i < tree_depth; i++) printf(", %d", dimGrid[i].x);
+  printf("\n");
+  printf("GPU array lengths: %d", lengths[0]);
+  for (int i = 1; i < tree_depth + 1; i++) printf(", %d", lengths[i]);
+  printf("\n");
+  printf("GPU last element: %24.14f\n", h_out[N - 1]);
+  printf("CPU last element: %24.14f\n", h_ref[N - 1]);
   printf("Timing results %12s %12s %8s\n", "Average", "Minimum", "Num_runs");
   printf("GPU exclusive: %12.6f %12.6f %8d\n", dur_ex, dur_ex_min, nruns_gpu);
   printf("GPU inclusive: %12.6f %12.6f %8d\n", dur_in, dur_in_min, nruns_gpu);
@@ -262,8 +314,7 @@ int main(int argc, char* argv[]) {
   cudaFree(h_in);
   cudaFree(h_out);
   cudaFree(h_ref);
-  cudaFree(d_in);
-  cudaFree(d_out);
+  for (int i = 0; i < tree_depth + 1; i++) cudaFree(d_arr[i]);
 
   return 0;
 }
