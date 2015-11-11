@@ -4,10 +4,11 @@
 #include "stdio.h"
 #include "stdlib.h"
 
+#define MAX_RAND 2
 //#define DEFAULT_NUM_ELEMENTS 16777216
 #define DEFAULT_NUM_ELEMENTS 1024
 #define BLOCK_SIZE 512
-#define MAX_RAND 2
+#define DOUBLE_BLOCK 1024
 #define LOG_NUM_BANKS 4
 #define CONFLICT_FREE_OFFSET(x) ((x) >> LOG_NUM_BANKS)
 
@@ -17,22 +18,22 @@ __global__ void prescanKernel(float* d_in, float* d_out, int N) {
   // Indexing
   unsigned int offset = 1;
   unsigned int ai = threadIdx.x;
-  unsigned int bi = threadIdx.x + N / 2;
+  unsigned int bi = threadIdx.x + BLOCK_SIZE;
   unsigned int bankOffsetA = CONFLICT_FREE_OFFSET(ai);
   unsigned int bankOffsetB = CONFLICT_FREE_OFFSET(bi);
 
   // Load data into shared memory
-  s_data[ai + bankOffsetA] = d_in[ai];
-  s_data[bi + bankOffsetB] = d_in[bi];
+  s_data[ai + bankOffsetA] = (ai < N) ? d_in[ai] : 0.f;
+  s_data[bi + bankOffsetB] = (bi < N) ? d_in[bi] : 0.f;
 
   // Build sum in place up the tree
-  for (int d = N >> 1; d > 0; d >>= 1) {
+  for (unsigned int d = BLOCK_SIZE; d > 0; d >>= 1) {
     __syncthreads();
     if (threadIdx.x < d) {
       unsigned int ai = offset * (2 * threadIdx.x + 1) - 1;
       unsigned int bi = offset * (2 * threadIdx.x + 2) - 1;
-      ai += ai >> LOG_NUM_BANKS;
-      bi += bi >> LOG_NUM_BANKS;
+      ai += CONFLICT_FREE_OFFSET(ai);
+      bi += CONFLICT_FREE_OFFSET(bi);
 
       s_data[bi] += s_data[ai];
     }
@@ -40,10 +41,11 @@ __global__ void prescanKernel(float* d_in, float* d_out, int N) {
   }
 
   // Clear the last element
-  if (threadIdx.x == 0) s_data[N - 1 + CONFLICT_FREE_OFFSET(N - 1)] = 0;
+  if (threadIdx.x == 0)
+    s_data[DOUBLE_BLOCK - 1 + CONFLICT_FREE_OFFSET(DOUBLE_BLOCK - 1)] = 0;
 
   // Traverse down the tree and build scan
-  for (int d = 1; d < N; d <<= 1) {
+  for (unsigned int d = 1; d <= BLOCK_SIZE; d <<= 1) {
     offset >>= 1;
     __syncthreads();
     if (threadIdx.x < d) {
@@ -60,8 +62,8 @@ __global__ void prescanKernel(float* d_in, float* d_out, int N) {
 
   // Write results to global memory
   __syncthreads();
-  d_out[ai] = s_data[ai + bankOffsetA];
-  d_out[bi] = s_data[bi + bankOffsetB];
+  if (ai < N) d_out[ai] = s_data[ai + bankOffsetA];
+  if (bi < N) d_out[bi] = s_data[bi + bankOffsetB];
 }
 
 void prescanOnDevice(float* h_in, float* h_out, float* d_in, float* d_out,
@@ -107,21 +109,11 @@ void prescanOnHost(float* h_in, float* h_ref, unsigned int N, float& dur_cpu) {
   cudaEventCreate(&end_cpu);
 
   // Perform prescan on host
-  h_ref[0] = 0;
-  double total_sum = 0;
   cudaEventRecord(start_cpu, 0);
-  for (unsigned int i = 1; i < N; i++) {
-    total_sum += h_in[i - 1];
-    h_ref[i] = h_in[i - 1] + h_ref[i - 1];
-  }
+  h_ref[0] = 0;
+  for (unsigned int i = 1; i < N; i++) h_ref[i] = h_in[i - 1] + h_ref[i - 1];
   cudaEventRecord(end_cpu, 0);
   cudaEventSynchronize(end_cpu);
-
-  // Check accuracy
-  if (total_sum != h_ref[N - 1])
-    printf(
-        "Warning: single-precision accuracy exceeded. "
-        "Scan will be inaccurate.\n");
 
   // Calculate duration
   cudaEventElapsedTime(&dur_cpu, start_cpu, end_cpu);
@@ -209,17 +201,17 @@ int main(int argc, char* argv[]) {
     // h_in[i] = ((double)rand() / RAND_MAX - 0.5f) * 2 * M;
     h_in[i] = (int)(rand() % MAX_RAND);
 
-  // Allocate device arrays
-  float* d_in = allocateDeviceArray(N * sizeof(float));
-  float* d_out = allocateDeviceArray(N * sizeof(float));
-
   // Setup grid
   dim3 dimBlock = BLOCK_SIZE;
   dim3 dimGrid = (N + 2 * BLOCK_SIZE - 1) / (2 * BLOCK_SIZE);
 
+  // Allocate device arrays
+  float* d_in = allocateDeviceArray(N * sizeof(float));
+  float* d_out = allocateDeviceArray(N * sizeof(float));
+
   // Shared memory size
   unsigned int shared_size =
-      (2 * BLOCK_SIZE + (2 * BLOCK_SIZE >> LOG_NUM_BANKS) - 2) * sizeof(float);
+      (DOUBLE_BLOCK + CONFLICT_FREE_OFFSET(DOUBLE_BLOCK) - 2) * sizeof(float);
 
   // Perform prescan on the device a number of times
   while (dur_in_total < dur_max) {
