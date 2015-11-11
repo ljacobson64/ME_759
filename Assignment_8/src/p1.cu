@@ -8,63 +8,65 @@
 #define DEFAULT_NUM_ELEMENTS 1024
 #define BLOCK_SIZE 512
 #define MAX_RAND 2
-
-#define NUM_BANKS 16
 #define LOG_NUM_BANKS 4
-#ifdef ZERO_BANK_CONFLICTS
-#define CONFLICT_FREE_OFFSET(n) ((n) >> NUM_BANKS + (n) >> (2 * LOG_NUM_BANKS))
-#else
-#define CONFLICT_FREE_OFFSET(n) ((n) >> LOG_NUM_BANKS)
-#endif
+#define CONFLICT_FREE_OFFSET(x) ((x) >> LOG_NUM_BANKS)
 
-__global__ void prescanKernel(float* g_idata, float* g_odata, int n) {
-  extern __shared__ float temp[];
+__global__ void prescanKernel(float* d_in, float* d_out, int N) {
+  extern __shared__ float s_data[];
 
-  int thid = threadIdx.x;
-  int offset = 1;
+  // Indexing
+  unsigned int offset = 1;
+  unsigned int ai = threadIdx.x;
+  unsigned int bi = threadIdx.x + N / 2;
+  unsigned int bankOffsetA = CONFLICT_FREE_OFFSET(ai);
+  unsigned int bankOffsetB = CONFLICT_FREE_OFFSET(bi);
 
-  int ai = thid;
-  int bi = thid + (n / 2);
+  // Load data into shared memory
+  s_data[ai + bankOffsetA] = d_in[ai];
+  s_data[bi + bankOffsetB] = d_in[bi];
 
-  int bankOffsetA = CONFLICT_FREE_OFFSET(ai);
-  int bankOffsetB = CONFLICT_FREE_OFFSET(ai);
-
-  temp[ai + bankOffsetA] = g_idata[ai];
-  temp[bi + bankOffsetB] = g_idata[bi];
-
-  for (int d = n >> 1; d > 0; d >>= 1) {
+  // Build sum in place up the tree
+  for (int d = N >> 1; d > 0; d >>= 1) {
     __syncthreads();
-    if (thid < d) {
-      int ai = offset * (2 * thid + 1) - 1;
-      int bi = offset * (2 * thid + 2) - 1;
-      temp[bi] += temp[ai];
+    if (threadIdx.x < d) {
+      unsigned int ai = offset * (2 * threadIdx.x + 1) - 1;
+      unsigned int bi = offset * (2 * threadIdx.x + 2) - 1;
+      ai += ai >> LOG_NUM_BANKS;
+      bi += bi >> LOG_NUM_BANKS;
+
+      s_data[bi] += s_data[ai];
     }
-    offset *= 2;
+    offset <<= 1;
   }
 
-  if (thid == 0) temp[n - 1 + CONFLICT_FREE_OFFSET(n - 1)] = 0;
+  // Clear the last element
+  if (threadIdx.x == 0) s_data[N - 1 + CONFLICT_FREE_OFFSET(N - 1)] = 0;
 
-  for (int d = 1; d < n; d *= 2) {
+  // Traverse down the tree and build scan
+  for (int d = 1; d < N; d <<= 1) {
     offset >>= 1;
     __syncthreads();
-    if (thid < d) {
-      int ai = offset * (2 * thid + 1) - 1;
-      int bi = offset * (2 * thid + 2) - 1;
-      float t = temp[ai];
-      temp[ai] = temp[bi];
-      temp[bi] += t;
+    if (threadIdx.x < d) {
+      unsigned int ai = offset * (2 * threadIdx.x + 1) - 1;
+      unsigned int bi = offset * (2 * threadIdx.x + 2) - 1;
+      ai += CONFLICT_FREE_OFFSET(ai);
+      bi += CONFLICT_FREE_OFFSET(bi);
+
+      float temp = s_data[ai];
+      s_data[ai] = s_data[bi];
+      s_data[bi] += temp;
     }
   }
 
+  // Write results to global memory
   __syncthreads();
-
-  g_odata[ai] = temp[ai + bankOffsetA];
-  g_odata[bi] = temp[bi + bankOffsetB];
+  d_out[ai] = s_data[ai + bankOffsetA];
+  d_out[bi] = s_data[bi + bankOffsetB];
 }
 
 void prescanOnDevice(float* h_in, float* h_out, float* d_in, float* d_out,
                      unsigned int N, dim3 dimBlock, dim3 dimGrid,
-                     unsigned int s_size, float& dur_ex, float& dur_in) {
+                     unsigned int shared_size, float& dur_ex, float& dur_in) {
   // Setup timing
   cudaEvent_t start_ex, end_ex, start_in, end_in;
   cudaEventCreate(&start_ex);
@@ -78,7 +80,7 @@ void prescanOnDevice(float* h_in, float* h_out, float* d_in, float* d_out,
 
   // Perform prescan on device
   cudaEventRecord(start_ex, 0);
-  //prescanKernel <<<dimGrid, dimBlock, s_size>>> (d_in, d_out, N);
+  prescanKernel <<<dimGrid, dimBlock, shared_size>>> (d_in, d_out, N);
   cudaEventRecord(end_ex, 0);
   cudaEventSynchronize(end_ex);
 
@@ -197,9 +199,9 @@ int main(int argc, char* argv[]) {
   float dur_cpu_min = 1e99;
 
   // Allocate host arrays
-  float* h_in = allocateHostArray(sizeof(float) * N);
-  float* h_out = allocateHostArray(sizeof(float) * N);
-  float* h_ref = allocateHostArray(sizeof(float) * N);
+  float* h_in = allocateHostArray(N * sizeof(float));
+  float* h_out = allocateHostArray(N * sizeof(float));
+  float* h_ref = allocateHostArray(N * sizeof(float));
 
   // Fill host array with random numbers
   srand(73);
@@ -208,20 +210,21 @@ int main(int argc, char* argv[]) {
     h_in[i] = (int)(rand() % MAX_RAND);
 
   // Allocate device arrays
-  float* d_in = allocateDeviceArray(sizeof(float) * N);
-  float* d_out = allocateDeviceArray(sizeof(float) * N);
+  float* d_in = allocateDeviceArray(N * sizeof(float));
+  float* d_out = allocateDeviceArray(N * sizeof(float));
 
   // Setup grid
   dim3 dimBlock = BLOCK_SIZE;
   dim3 dimGrid = (N + 2 * BLOCK_SIZE - 1) / (2 * BLOCK_SIZE);
 
   // Shared memory size
-  unsigned int s_size = sizeof(double) * BLOCK_SIZE;
+  unsigned int shared_size =
+      (2 * BLOCK_SIZE + (2 * BLOCK_SIZE >> LOG_NUM_BANKS) - 2) * sizeof(float);
 
   // Perform prescan on the device a number of times
   while (dur_in_total < dur_max) {
     nruns_gpu++;
-    prescanOnDevice(h_in, h_out, d_in, d_out, N, dimBlock, dimGrid, s_size,
+    prescanOnDevice(h_in, h_out, d_in, d_out, N, dimBlock, dimGrid, shared_size,
                     dur_ex, dur_in);
     dur_ex_total += dur_ex;
     dur_in_total += dur_in;

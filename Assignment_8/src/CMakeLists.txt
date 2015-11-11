@@ -15,9 +15,8 @@ include(SBELUtils.cmake)
 # - [not set] - unoptimized                              #
 ##########################################################
 
-
 #enable_mpi_support()
-enable_openmp_support()
+#enable_openmp_support()
 enable_cuda_support()
 
 cuda_add_executable(p1 p1.cu)
