@@ -4,6 +4,7 @@
 #include "stdio.h"
 #include "stdlib.h"
 
+// Definitions
 #define MAX_RAND 2
 #define DEFAULT_NUM_ELEMENTS 16777216
 #define BLOCK_SIZE 512
@@ -80,10 +81,10 @@ __global__ void additionKernel(float* d_in, float* d_out, float* d_sums,
   d_out[i + BLOCK_SIZE] = d_in[i + BLOCK_SIZE] + d_sums[blockIdx.x];
 }
 
-void prescanOnDevice(float* h_in, float* h_out, float** d_arr,
-                     unsigned int N, int tree_depth, unsigned int* lengths,
-                     dim3* dimBlock, dim3* dimGrid, unsigned int shared_size,
-                     float& dur_ex, float& dur_in) {
+void prescanOnDevice(float* h_in, float* h_out, float** d_arr, unsigned int N,
+                     int tree_depth, unsigned int* lengths, dim3* dimBlock,
+                     dim3* dimGrid, unsigned int shared_size, float& dur_ex,
+                     float& dur_in) {
   // Setup timing
   cudaEvent_t start_ex, end_ex, start_in, end_in;
   cudaEventCreate(&start_ex);
@@ -93,7 +94,8 @@ void prescanOnDevice(float* h_in, float* h_out, float** d_arr,
 
   // Copy host array to device
   cudaEventRecord(start_in, 0);
-  cudaMemcpy(d_arr[0], h_in, lengths[0] * sizeof(float), cudaMemcpyHostToDevice);
+  cudaMemcpy(d_arr[0], h_in, lengths[0] * sizeof(float),
+             cudaMemcpyHostToDevice);
 
   // Perform prescan on device
   cudaEventRecord(start_ex, 0);
@@ -179,7 +181,7 @@ void exitUsage() {
   exit(EXIT_SUCCESS);
 }
 
-void parseInput(int argc, char* argv[], unsigned int& N, float& dur_max) {
+void parseInput(int argc, char** argv, unsigned int& N, float& dur_max) {
   if (argc == 1) {
     N = DEFAULT_NUM_ELEMENTS;
     dur_max = 1000.f;
@@ -195,7 +197,7 @@ void parseInput(int argc, char* argv[], unsigned int& N, float& dur_max) {
   dur_max *= 1000;
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char** argv) {
   unsigned int N;
   float dur_max;
   parseInput(argc, argv, N, dur_max);
@@ -249,7 +251,7 @@ int main(int argc, char* argv[]) {
   for (unsigned int i = 0; i < N; i++)
     // h_in[i] = ((double)rand() / RAND_MAX - 0.5f) * 2 * M;
     h_in[i] = (int)(rand() % MAX_RAND);
-    //h_in[i] = 1.f;
+  // h_in[i] = 1.f;
 
   // Allocate device arrays
   float* d_arr[tree_depth + 1];
