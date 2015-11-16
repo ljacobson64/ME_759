@@ -281,12 +281,15 @@ int main(int argc, char** argv) {
   printf("Result (Device): %24.14f\n", *h_device);
   printf("Result (Thrust): %24.14f\n", *h_thrust);
   printf("Result (CPU):    %24.14f\n", *h_cpu);
-  printf("Timing results %12s %12s %8s\n", "Average", "Minimum", "Num_runs");
-  printf("Device ex: %12.6f %12.6f %8d\n", dur_ex, dur_ex_min, nruns_device);
-  printf("Device in: %12.6f %12.6f %8d\n", dur_in, dur_in_min, nruns_device);
-  printf("Thrust:    %12.6f %12.6f %8d\n", dur_thrust, dur_thrust_min,
+  printf("Timing results  %12s  %12s  %8s\n", "Average", "Minimum", "Num_runs");
+  printf("Device ex:      %12.6f  %12.6f  %8d\n", dur_ex, dur_ex_min,
+         nruns_device);
+  printf("Device in:      %12.6f  %12.6f  %8d\n", dur_in, dur_in_min,
+         nruns_device);
+  printf("Thrust:         %12.6f  %12.6f  %8d\n", dur_thrust, dur_thrust_min,
          nruns_thrust);
-  printf("CPU:       %12.6f %12.6f %8d\n", dur_cpu, dur_cpu_min, nruns_cpu);
+  printf("CPU:            %12.6f  %12.6f  %8d\n", dur_cpu, dur_cpu_min,
+         nruns_cpu);
   printf("\n");
 
   // Free arrays
