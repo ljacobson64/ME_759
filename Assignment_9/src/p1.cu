@@ -182,7 +182,7 @@ int main(int argc, char** argv) {
   parseInput(argc, argv, N, M, dur_max);
 
   // Allocate host arrays
-  double* h_in = allocateHostArray(sizeof(double) * N);
+  double* h_in = allocateHostArray(N * sizeof(double));
   double* h_device = allocateHostArray(sizeof(double));
   double* h_thrust = allocateHostArray(sizeof(double));
   double* h_cpu = allocateHostArray(sizeof(double));
@@ -224,7 +224,7 @@ int main(int argc, char** argv) {
   // Allocate device arrays
   double* d_arr[tree_depth + 1];
   for (int i = 0; i < tree_depth + 1; i++)
-    d_arr[i] = allocateDeviceArray(sizeof(double) * lengths[i]);
+    d_arr[i] = allocateDeviceArray(lengths[i] * sizeof(double));
 
   // Setup timing
   int nruns_device = 0;

@@ -236,7 +236,6 @@ int main(int argc, char** argv) {
   srand(73);
   for (unsigned int i = 0; i < N; i++)
     h_in[i] = ((double)rand() / RAND_MAX - 0.5f) * 2 * M;
-    // h_in[i] = (int)(rand() % M);
 
   // Calculate the tree depth
   int tree_depth = 0;
