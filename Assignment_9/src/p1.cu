@@ -57,9 +57,9 @@ __global__ void reductionKernel(double* d_in, double* d_out, unsigned int N) {
 }
 
 void reductionDevice(double* h_in, double* h_out, double** d_arr,
-                     unsigned int N, unsigned int tree_depth,
-                     unsigned int* lengths, dim3* dimBlock, dim3* dimGrid,
-                     unsigned int& s_size, float& dur_ex, float& dur_in) {
+                     unsigned int N, int tree_depth, unsigned int* lengths,
+                     dim3* dimBlock, dim3* dimGrid, unsigned int& shared_size,
+                     float& dur_ex, float& dur_in) {
   // Setup timing
   cudaEvent_t start_ex, end_ex, start_in, end_in;
   cudaEventCreate(&start_ex);
@@ -73,8 +73,8 @@ void reductionDevice(double* h_in, double* h_out, double** d_arr,
 
   // Perform reduction on device
   cudaEventRecord(start_ex, 0);
-  for (unsigned int i = 0; i < tree_depth; i++)
-    reductionKernel<BLOCK_SIZE> <<<dimGrid[i], dimBlock[i], s_size>>>
+  for (int i = 0; i < tree_depth; i++)
+    reductionKernel<BLOCK_SIZE> <<<dimGrid[i], dimBlock[i], shared_size>>>
         (d_arr[i], d_arr[i + 1], lengths[i]);
   cudaEventRecord(end_ex, 0);
   cudaEventSynchronize(end_ex);
@@ -123,6 +123,12 @@ void reductionHost(double* h_in, double* h_out, unsigned int N,
 
   // Calculate duration
   cudaEventElapsedTime(&dur_cpu, start_cpu, end_cpu);
+}
+
+bool checkResults(double* h_out, double* h_ref, double eps) {
+  double delta = abs(*h_out - *h_ref);
+  if (delta > eps) return false;
+  return true;
 }
 
 double* allocateHostArray(unsigned int size) {
@@ -187,7 +193,7 @@ int main(int argc, char** argv) {
     h_in[i] = ((double)rand() / RAND_MAX - 0.5f) * 2 * M;
 
   // Calculate the tree depth
-  unsigned int tree_depth = 0;
+  int tree_depth = 0;
   {
     unsigned int length = N;
     while (length > 1) {
@@ -200,24 +206,24 @@ int main(int argc, char** argv) {
   // Calculate the lengths of the device arrays
   unsigned int lengths[tree_depth + 1];
   lengths[0] = N;
-  for (unsigned int i = 1; i < tree_depth + 1; i++)
+  for (int i = 1; i < tree_depth + 1; i++)
     lengths[i] = (lengths[i - 1] + (BLOCK_SIZE * ELEMS_PER_THREAD) - 1) /
                  (BLOCK_SIZE * ELEMS_PER_THREAD);
 
   // Setup grid
   dim3 dimBlock[tree_depth];
   dim3 dimGrid[tree_depth];
-  for (unsigned int i = 0; i < tree_depth; i++) {
+  for (int i = 0; i < tree_depth; i++) {
     dimBlock[i].x = BLOCK_SIZE;
     dimGrid[i].x = lengths[i + 1];
   }
 
   // Shared memory size
-  unsigned int s_size = BLOCK_SIZE * sizeof(double);
+  unsigned int shared_size = BLOCK_SIZE * sizeof(double);
 
   // Allocate device arrays
   double* d_arr[tree_depth + 1];
-  for (unsigned int i = 0; i < tree_depth + 1; i++)
+  for (int i = 0; i < tree_depth + 1; i++)
     d_arr[i] = allocateDeviceArray(sizeof(double) * lengths[i]);
 
   // Setup timing
@@ -238,7 +244,7 @@ int main(int argc, char** argv) {
   while (dur_in_total < dur_max) {
     nruns_device++;
     reductionDevice(h_in, h_device, d_arr, N, tree_depth, lengths, dimBlock,
-                    dimGrid, s_size, dur_ex, dur_in);
+                    dimGrid, shared_size, dur_ex, dur_in);
     dur_ex_total += dur_ex;
     dur_in_total += dur_in;
     if (dur_ex < dur_ex_min) dur_ex_min = dur_ex;
@@ -263,6 +269,19 @@ int main(int argc, char** argv) {
     if (dur_cpu < dur_cpu_min) dur_cpu_min = dur_cpu;
     if (dur_cpu_total == 0.f) break;
   }
+
+  // Compare device and host results
+  double eps = (double)M * 0.001f;
+  bool passed_device = checkResults(h_device, h_cpu, eps);
+  bool passed_thrust = checkResults(h_thrust, h_cpu, eps);
+  if (passed_device)
+    printf("Test PASSED (device)\n");
+  else
+    printf("Test FAILED (device)\n");
+  if (passed_thrust)
+    printf("Test PASSED (thrust)\n");
+  else
+    printf("Test FAILED (thrust)\n");
 
   // Print stuff
   printf("N: %u\n", N);
