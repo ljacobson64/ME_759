@@ -233,7 +233,7 @@ int main(int argc, char** argv) {
   // Setup host array and fill with random numbers
   srand(73);
   for (unsigned int i = 0; i < N; i++)
-    //h_in[i] = ((float)rand() / RAND_MAX - 0.5f) * 2 * M;
+    // h_in[i] = ((float)rand() / RAND_MAX - 0.5f) * 2 * M;
     h_in[i] = (int)(rand() % M);
 
   // Calculate the tree depth
@@ -321,7 +321,7 @@ int main(int argc, char** argv) {
   // Compare device and host results
   float eps = (float)M * 0.001f;
   unsigned int nDiffs_device = checkResults(h_device, h_cpu, N, eps);
-  unsigned int nDiffs_thrust = checkResults(h_device, h_cpu, N, eps);
+  unsigned int nDiffs_thrust = checkResults(h_thrust, h_cpu, N, eps);
   if (nDiffs_device == 0)
     printf("Test PASSED (device)\n");
   else
