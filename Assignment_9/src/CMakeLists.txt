@@ -5,3 +5,4 @@ set(CMAKE_BUILD_TYPE "Release")
 
 cuda_add_executable(p1 p1.cu)
 cuda_add_executable(p2 p2.cu)
+cuda_add_executable(p3 p3.cu)
