@@ -3,7 +3,7 @@
 #include "stdio.h"
 #include "stdlib.h"
 
-#include "thrust/device_vector.h"
+#include "thrust/reduce.h"
 
 #define BLOCK_SIZE 512
 #define ELEMS_PER_THREAD 32
