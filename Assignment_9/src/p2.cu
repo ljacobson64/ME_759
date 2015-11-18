@@ -10,18 +10,19 @@
 #define LOG_NUM_BANKS 4
 #define CONFLICT_FREE_OFFSET(x) ((x) >> LOG_NUM_BANKS)
 
-__global__ void prescanKernel(float* d_in, float* d_out, float* d_sums,
+__global__ void prescanKernel(double* d_in, double* d_out, double* d_sums,
                               unsigned int N) {
-  extern __shared__ float s_data[];
+  extern __shared__ double s_data[];
   unsigned int shared_end =
       DOUBLE_BLOCK + CONFLICT_FREE_OFFSET(DOUBLE_BLOCK) - 2;
 
   // Indexing
   unsigned int offset = 1;
+  unsigned int iblock = gridDim.x * blockIdx.y + blockIdx.x;
   unsigned int ai = threadIdx.x;
   unsigned int bi = threadIdx.x + BLOCK_SIZE;
-  unsigned int ag = ai + DOUBLE_BLOCK * blockIdx.x;
-  unsigned int bg = bi + DOUBLE_BLOCK * blockIdx.x;
+  unsigned int ag = ai + iblock * DOUBLE_BLOCK;
+  unsigned int bg = bi + iblock * DOUBLE_BLOCK;
   unsigned int bankOffsetA = CONFLICT_FREE_OFFSET(ai);
   unsigned int bankOffsetB = CONFLICT_FREE_OFFSET(bi);
 
@@ -45,7 +46,7 @@ __global__ void prescanKernel(float* d_in, float* d_out, float* d_sums,
 
   // Write the last element of shared memory to the auxilary array and clear it
   if (threadIdx.x == 0) {
-    d_sums[blockIdx.x] = s_data[shared_end];
+    d_sums[iblock] = s_data[shared_end];
     s_data[shared_end] = 0.f;
   }
 
@@ -59,7 +60,7 @@ __global__ void prescanKernel(float* d_in, float* d_out, float* d_sums,
       ai += CONFLICT_FREE_OFFSET(ai);
       bi += CONFLICT_FREE_OFFSET(bi);
 
-      float temp = s_data[ai];
+      double temp = s_data[ai];
       s_data[ai] = s_data[bi];
       s_data[bi] += temp;
     }
@@ -71,15 +72,16 @@ __global__ void prescanKernel(float* d_in, float* d_out, float* d_sums,
   if (bg < N) d_out[bg] = s_data[bi + bankOffsetB];
 }
 
-__global__ void additionKernel(float* d_in, float* d_out, float* d_sums,
+__global__ void additionKernel(double* d_in, double* d_out, double* d_sums,
                                unsigned int N) {
-  unsigned int i = DOUBLE_BLOCK * blockIdx.x + threadIdx.x;
-  if (i >= N) return;
-  d_out[i] = d_in[i] + d_sums[blockIdx.x];
-  d_out[i + BLOCK_SIZE] = d_in[i + BLOCK_SIZE] + d_sums[blockIdx.x];
+  unsigned int iblock = gridDim.x * blockIdx.y + blockIdx.x;
+  unsigned int i = iblock * DOUBLE_BLOCK + threadIdx.x;
+  if (i < N) d_out[i] = d_in[i] + d_sums[iblock];
+  if (i + BLOCK_SIZE < N)
+    d_out[i + BLOCK_SIZE] = d_in[i + BLOCK_SIZE] + d_sums[iblock];
 }
 
-void prescanDevice(float* h_in, float* h_out, float** d_arr, unsigned int N,
+void prescanDevice(double* h_in, double* h_out, double** d_arr, unsigned int N,
                    int tree_depth, unsigned int* lengths, dim3* dimBlock,
                    dim3* dimGrid, unsigned int shared_size, float& dur_ex,
                    float& dur_in) {
@@ -92,7 +94,7 @@ void prescanDevice(float* h_in, float* h_out, float** d_arr, unsigned int N,
 
   // Copy host array to device
   cudaEventRecord(start_in, 0);
-  cudaMemcpy(d_arr[0], h_in, lengths[0] * sizeof(float),
+  cudaMemcpy(d_arr[0], h_in, lengths[0] * sizeof(double),
              cudaMemcpyHostToDevice);
 
   // Perform prescan on device
@@ -107,7 +109,7 @@ void prescanDevice(float* h_in, float* h_out, float** d_arr, unsigned int N,
   cudaEventSynchronize(end_ex);
 
   // Copy device array back to host
-  cudaMemcpy(h_out, d_arr[0], lengths[0] * sizeof(float),
+  cudaMemcpy(h_out, d_arr[0], lengths[0] * sizeof(double),
              cudaMemcpyDeviceToHost);
   cudaEventRecord(end_in, 0);
   cudaEventSynchronize(end_in);
@@ -123,7 +125,7 @@ void prescanDevice(float* h_in, float* h_out, float** d_arr, unsigned int N,
   cudaEventDestroy(end_in);
 }
 
-void prescanThrust(float* h_in, float* h_out, unsigned int N, float& dur) {
+void prescanThrust(double* h_in, double* h_out, unsigned int N, float& dur) {
   // Setup timing
   cudaEvent_t start, end;
   cudaEventCreate(&start);
@@ -143,7 +145,7 @@ void prescanThrust(float* h_in, float* h_out, unsigned int N, float& dur) {
   cudaEventDestroy(end);
 }
 
-void prescanHost(float* h_in, float* h_out, unsigned int N, float& dur) {
+void prescanHost(double* h_in, double* h_out, unsigned int N, float& dur) {
   // Setup timing
   cudaEvent_t start, end;
   cudaEventCreate(&start);
@@ -151,7 +153,7 @@ void prescanHost(float* h_in, float* h_out, unsigned int N, float& dur) {
 
   // Perform prescan on host
   cudaEventRecord(start, 0);
-  h_out[0] = 0;
+  h_out[0] = 0.f;
   for (unsigned int i = 1; i < N; i++) h_out[i] = h_in[i - 1] + h_out[i - 1];
   cudaEventRecord(end, 0);
   cudaEventSynchronize(end);
@@ -164,18 +166,18 @@ void prescanHost(float* h_in, float* h_out, unsigned int N, float& dur) {
   cudaEventDestroy(end);
 }
 
-unsigned int checkResults(float* h_out, float* h_ref, unsigned int N,
-                          float eps) {
+unsigned int checkResults(double* h_out, double* h_ref, unsigned int N,
+                          double eps) {
   unsigned int nDiffs = 0;
   for (unsigned int i = 0; i < N; i++) {
-    float delta = abs(h_out[i] - h_ref[i]);
+    double delta = abs(h_out[i] - h_ref[i]);
     if (delta > eps) nDiffs++;
   }
   return nDiffs;
 }
 
-float* allocateHostArray(unsigned int size) {
-  float* h_array;
+double* allocateHostArray(unsigned int size) {
+  double* h_array;
   cudaError_t code = cudaMallocHost(&h_array, size);
   if (code != cudaSuccess) {
     printf("Memory allocation on the host was unsuccessful.\n");
@@ -184,8 +186,8 @@ float* allocateHostArray(unsigned int size) {
   return h_array;
 }
 
-float* allocateDeviceArray(unsigned int size) {
-  float* d_arr;
+double* allocateDeviceArray(unsigned int size) {
+  double* d_arr;
   cudaError_t code = cudaMalloc(&d_arr, size);
   if (code != cudaSuccess) {
     printf("Memory allocation on the device was unsuccessful.\n");
@@ -195,7 +197,7 @@ float* allocateDeviceArray(unsigned int size) {
 }
 
 void exitUsage() {
-  printf("Usage: ./p2 [<M> <N> [<dur_max>]]\n");
+  printf("Usage: ./p2 [[M N] [dur_max]]\n");
   exit(EXIT_SUCCESS);
 }
 
@@ -225,16 +227,16 @@ int main(int argc, char** argv) {
   parseInput(argc, argv, N, M, dur_max);
 
   // Allocate host arrays
-  float* h_in = allocateHostArray(N * sizeof(float));
-  float* h_device = allocateHostArray(N * sizeof(float));
-  float* h_thrust = allocateHostArray(N * sizeof(float));
-  float* h_cpu = allocateHostArray(N * sizeof(float));
+  double* h_in = allocateHostArray(N * sizeof(double));
+  double* h_device = allocateHostArray(N * sizeof(double));
+  double* h_thrust = allocateHostArray(N * sizeof(double));
+  double* h_cpu = allocateHostArray(N * sizeof(double));
 
   // Setup host array and fill with random numbers
   srand(73);
   for (unsigned int i = 0; i < N; i++)
-    // h_in[i] = ((float)rand() / RAND_MAX - 0.5f) * 2 * M;
-    h_in[i] = (int)(rand() % M);
+    h_in[i] = ((double)rand() / RAND_MAX - 0.5f) * 2 * M;
+    // h_in[i] = (int)(rand() % M);
 
   // Calculate the tree depth
   int tree_depth = 0;
@@ -256,18 +258,23 @@ int main(int argc, char** argv) {
   dim3 dimBlock[tree_depth];
   dim3 dimGrid[tree_depth];
   for (int i = 0; i < tree_depth; i++) {
-    dimBlock[i].x = BLOCK_SIZE;
-    dimGrid[i].x = lengths[i + 1];
+      dimBlock[i].x = BLOCK_SIZE;
+    if (lengths[i + 1] < 32768)
+      dimGrid[i].x = lengths[i + 1];
+    else {
+      dimGrid[i].x = 32768;
+      dimGrid[i].y = (lengths[i + 1] + 32768 - 1) / 32768;
+    }
   }
 
   // Shared memory size
   unsigned int shared_size =
-      (DOUBLE_BLOCK + CONFLICT_FREE_OFFSET(DOUBLE_BLOCK)) * sizeof(float);
+      (DOUBLE_BLOCK + CONFLICT_FREE_OFFSET(DOUBLE_BLOCK)) * sizeof(double);
 
   // Allocate device arrays
-  float* d_arr[tree_depth + 1];
+  double* d_arr[tree_depth + 1];
   for (int i = 0; i < tree_depth + 1; i++)
-    d_arr[i] = allocateDeviceArray(lengths[i] * sizeof(float));
+    d_arr[i] = allocateDeviceArray(lengths[i] * sizeof(double));
 
   // Setup timing
   unsigned int nruns_device = 0;
@@ -292,7 +299,7 @@ int main(int argc, char** argv) {
     dur_in_total += dur_in;
     if (dur_ex < dur_ex_min) dur_ex_min = dur_ex;
     if (dur_in < dur_in_min) dur_in_min = dur_in;
-    if (dur_in_total == 0.f) break;
+    if (dur_in_total <= 0.f) break;
   }
 
   // Vector reduction on the device with thrust
@@ -301,7 +308,7 @@ int main(int argc, char** argv) {
     prescanThrust(h_in, h_thrust, N, dur_thrust);
     dur_thrust_total += dur_thrust;
     if (dur_thrust < dur_thrust_min) dur_thrust_min = dur_thrust;
-    if (dur_thrust_total == 0.f) break;
+    if (dur_thrust_total <= 0.f) break;
   }
 
   // Vector reduction on CPU
@@ -310,7 +317,7 @@ int main(int argc, char** argv) {
     prescanHost(h_in, h_cpu, N, dur_cpu);
     dur_cpu_total += dur_cpu;
     if (dur_cpu < dur_cpu_min) dur_cpu_min = dur_cpu;
-    if (dur_cpu_total == 0.f) break;
+    if (dur_cpu_total <= 0.f) break;
   }
 
   dur_ex = dur_ex_total / nruns_device;
@@ -319,7 +326,7 @@ int main(int argc, char** argv) {
   dur_cpu = dur_cpu_total / nruns_cpu;
 
   // Compare device and host results
-  float eps = (float)M * 0.001f;
+  double eps = (double)M * 0.001f;
   unsigned int nDiffs_device = checkResults(h_device, h_cpu, N, eps);
   unsigned int nDiffs_thrust = checkResults(h_thrust, h_cpu, N, eps);
   if (nDiffs_device == 0)
@@ -335,11 +342,13 @@ int main(int argc, char** argv) {
   printf("N: %u\n", N);
   printf("M: %u\n", M);
   printf("Tree depth: %d\n", tree_depth);
-  printf("Block sizes: %d", dimBlock[0].x);
-  for (int i = 1; i < tree_depth; i++) printf(", %d", dimBlock[i].x);
+  printf("Block sizes: %dx%d", dimBlock[0].y, dimBlock[0].x);
+  for (int i = 1; i < tree_depth; i++)
+    printf(", %dx%d", dimBlock[i].y, dimBlock[i].x);
   printf("\n");
-  printf("Grid sizes: %d", dimGrid[0].x);
-  for (int i = 1; i < tree_depth; i++) printf(", %d", dimGrid[i].x);
+  printf("Grid sizes: %dx%d", dimGrid[0].y, dimGrid[0].x);
+  for (int i = 1; i < tree_depth; i++)
+    printf(", %dx%d", dimGrid[i].y, dimGrid[i].x);
   printf("\n");
   printf("GPU array lengths: %d", lengths[0]);
   for (int i = 1; i < tree_depth + 1; i++) printf(", %d", lengths[i]);
@@ -363,7 +372,7 @@ int main(int argc, char** argv) {
   cudaFree(h_device);
   cudaFree(h_thrust);
   cudaFree(h_cpu);
-  for (int i = 0; i < tree_depth + 1; i++) cudaFree(d_arr[i]);
+  //for (int i = 0; i < tree_depth + 1; i++) cudaFree(d_arr[i]);
 
   return 0;
 }

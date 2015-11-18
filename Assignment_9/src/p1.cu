@@ -152,7 +152,7 @@ double* allocateDeviceArray(unsigned int size) {
 }
 
 void exitUsage() {
-  printf("Usage: ./p2 [<M> <N> [<dur_max>]]\n");
+  printf("Usage: ./p2 [[M N] [dur_max]]\n");
   exit(EXIT_SUCCESS);
 }
 
@@ -249,7 +249,7 @@ int main(int argc, char** argv) {
     dur_in_total += dur_in;
     if (dur_ex < dur_ex_min) dur_ex_min = dur_ex;
     if (dur_in < dur_in_min) dur_in_min = dur_in;
-    if (dur_in_total == 0.f) break;
+    if (dur_in_total <= 0.f) break;
   }
 
   // Vector reduction on the device with thrust
@@ -258,7 +258,7 @@ int main(int argc, char** argv) {
     reductionThrust(h_in, h_thrust, N, dur_thrust);
     dur_thrust_total += dur_thrust;
     if (dur_thrust < dur_thrust_min) dur_thrust_min = dur_thrust;
-    if (dur_thrust_total == 0.f) break;
+    if (dur_thrust_total <= 0.f) break;
   }
 
   // Vector reduction on CPU
@@ -267,7 +267,7 @@ int main(int argc, char** argv) {
     reductionHost(h_in, h_cpu, N, dur_cpu);
     dur_cpu_total += dur_cpu;
     if (dur_cpu < dur_cpu_min) dur_cpu_min = dur_cpu;
-    if (dur_cpu_total == 0.f) break;
+    if (dur_cpu_total <= 0.f) break;
   }
 
   // Compare device and host results
@@ -288,11 +288,13 @@ int main(int argc, char** argv) {
   printf("M: %u\n", M);
   printf("Elements per thread: %d\n", ELEMS_PER_THREAD);
   printf("Tree depth: %d\n", tree_depth);
-  printf("Block sizes: %d", dimBlock[0].x);
-  for (int i = 1; i < tree_depth; i++) printf(", %d", dimBlock[i].x);
+  printf("Block sizes: %dx%d", dimBlock[0].y, dimBlock[0].x);
+  for (int i = 1; i < tree_depth; i++)
+    printf(", %dx%d", dimBlock[i].y, dimBlock[i].x);
   printf("\n");
-  printf("Grid sizes: %d", dimGrid[0].x);
-  for (int i = 1; i < tree_depth; i++) printf(", %d", dimGrid[i].x);
+  printf("Grid sizes: %dx%d", dimGrid[0].y, dimGrid[0].x);
+  for (int i = 1; i < tree_depth; i++)
+    printf(", %dx%d", dimGrid[i].y, dimGrid[i].x);
   printf("\n");
   printf("GPU array lengths: %d", lengths[0]);
   for (int i = 1; i < tree_depth + 1; i++) printf(", %d", lengths[i]);
