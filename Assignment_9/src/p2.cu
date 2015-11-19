@@ -204,8 +204,8 @@ void exitUsage() {
 void parseInput(int argc, char** argv, unsigned int& N, unsigned int& M,
                 float& dur_max) {
   if (argc == 1) {
-    N = 16777216;
-    M = 2;
+    N = 50000000;
+    M = 5;
     dur_max = 1000.f;
     return;
   }
