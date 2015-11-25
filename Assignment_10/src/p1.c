@@ -29,7 +29,7 @@ int main() {
   int n = 1e6;
   double h = (x_n - x_0) / n;
 
-  int nthreads[2] = {1, 8, 24};
+  int nthreads[3] = {1, 8, 24};
   int nts = sizeof(nthreads) / sizeof(nthreads[0]);
   
   int i;
