@@ -48,11 +48,11 @@ int main() {
       dur = end - start;
       dur_total += dur;
     }
-    dur = dur_total / nruns;
+    dur = dur_total / nruns * 1000;
 
     printf("threads: %d\n", nt);
     printf("result: %f\n", result);
-    printf("time: %f\n", dur);
+    printf("time: %f ms\n", dur);
     printf("nruns: %d\n", nruns);
     printf("\n");
   }
