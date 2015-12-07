@@ -8,5 +8,7 @@ set(CMAKE_C_LINK_FLAGS ${CMAKE_C_LINK_FLAGS} ${MPI_LINK_FLAGS})
 include_directories(${MPI_INCLUDE_PATH})
 
 add_executable(p1 p1.c)
+add_executable(p3 p3.c)
 target_link_libraries(p1 ${MPI_LIBRARIES})
-# target_link_libraries(p1 m)
+target_link_libraries(p3 ${MPI_LIBRARIES})
+target_link_libraries(p3 m)
