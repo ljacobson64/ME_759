@@ -69,8 +69,7 @@ int main(int argc, char **argv) {
     // than the computation of the central sum)
     if (rank == 0) {
       result = 0.;
-      for (p = 0; p < procs; p++)
-        result += result_p[p];
+      for (p = 0; p < procs; p++) result += result_p[p];
       result *= 48;
       result += 17 * (f(0 * h) + f((N - 0) * h));
       result += 59 * (f(1 * h) + f((N - 1) * h));
