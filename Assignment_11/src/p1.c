@@ -4,7 +4,7 @@
 #include "string.h"
 
 #define N_MAX 1073741824
-#define MAX_RUNS 100000
+#define MAX_RUNS 1000
 #define DUR_MAX 1.
 
 int main(int argc, char **argv) {

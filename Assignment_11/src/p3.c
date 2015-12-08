@@ -5,7 +5,7 @@
 #include "string.h"
 
 #define N 1000000
-#define MAX_RUNS 100000
+#define MAX_RUNS 1000
 #define DUR_MAX 1.
 
 double f(double x) { return exp(sin(x)) * cos(x / 40.f); }
