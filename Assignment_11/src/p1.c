@@ -5,7 +5,7 @@
 
 #define N_MAX 1073741824
 #define MAX_RUNS 1000
-#define DUR_MAX 1.
+#define DUR_MAX 10.
 
 int main(int argc, char **argv) {
   // Setup MPI run
